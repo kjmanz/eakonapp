@@ -197,7 +197,7 @@ const App: React.FC = () => {
                         fontWeight: '700',
                         zIndex: 1
                       }}>
-                        📱 {series}
+                        {series}
                       </span>
                       <input
                         type="text"
@@ -418,7 +418,7 @@ const App: React.FC = () => {
                               fontSize: '1.25rem',
                               textAlign: 'center'
                             }}>
-                              📱 {result.series}
+                              {result.series}
                             </td>
                             <td style={{ padding: '1rem 0.75rem', textAlign: 'right', color: '#4b5563', fontSize: '1rem', fontWeight: '600' }}>
                               {formatCurrency(result.unitPrice)}
@@ -491,7 +491,6 @@ const App: React.FC = () => {
                           tick={{ fontSize: 11, fill: '#374151' }}
                           axisLine={{ stroke: '#d1d5db' }}
                           tickFormatter={(value) => `¥${Math.round(value / 10000)}万`}
-                          domain={[0, 2000000]}
                         />
                         <Tooltip 
                           formatter={(value: number) => [formatCurrency(value), '10年総費用']}
