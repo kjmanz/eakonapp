@@ -19,53 +19,71 @@ const App: React.FC = () => {
   const [unitPrices, setUnitPrices] = useState({ XS: '', EX: '', J: '' });
   const [dailyHours, setDailyHours] = useState(8);
   const [coolRatio, setCoolRatio] = useState(50);
+  const [calculationResults, setCalculationResults] = useState<CalculationResult[]>([]);
+  const [hasCalculated, setHasCalculated] = useState(false);
 
   // 計算ロジック
-  const calculationResults: CalculationResult[] = useMemo(() => {
+  const calculateResults = () => {
     const toKWh = (w: number) => w / 1000;
     const weightedKWh = (coolW: number, heatW: number) => 
       toKWh(coolW) * (coolRatio / 100) + toKWh(heatW) * (1 - coolRatio / 100);
     const annualElecYen = (coolW: number, heatW: number) => 
       weightedKWh(coolW, heatW) * dailyHours * 365 * kWhCostWithTax;
     
+    // 価格をフォーマットして表示用に更新
+    const formattedPrices = { ...unitPrices };
+    (['XS', 'EX', 'J'] as Series[]).forEach(series => {
+      if (unitPrices[series]) {
+        // 全角数字を半角数字に変換
+        const halfWidthValue = unitPrices[series].replace(/[０-９]/g, (char) => 
+          String.fromCharCode(char.charCodeAt(0) - 0xFEE0)
+        );
+        
+        // 数字のみを抽出
+        const numericValue = halfWidthValue.replace(/[^0-9]/g, '');
+        
+        if (numericValue) {
+          // カンマ区切りでフォーマット
+          formattedPrices[series] = new Intl.NumberFormat('ja-JP').format(parseInt(numericValue));
+        }
+      }
+    });
+    setUnitPrices(formattedPrices);
+    
     const specs = acSpecs[selectedTatami];
-    return (['XS', 'EX', 'J'] as Series[]).map(series => {
+    const results = (['XS', 'EX', 'J'] as Series[]).map(series => {
       const spec = specs[series];
-      const unitPrice = parseInt(unitPrices[series].replace(/,/g, '')) || 0;
+      // フォーマットされた価格から数値を抽出
+      const unitPrice = parseInt(formattedPrices[series].replace(/,/g, '')) || 0;
       const annualCost = annualElecYen(spec.coolW, spec.heatW);
       const total = unitPrice + annualCost * 10;
       return { series, unitPrice, annualElecCost: annualCost, tenYearTotal: total };
     });
-  }, [selectedTatami, unitPrices, coolRatio, dailyHours]);
+    
+    setCalculationResults(results);
+    setHasCalculated(true);
+  };
 
   const cheapestSeries = useMemo(() => {
+    if (!hasCalculated) return null;
     const validResults = calculationResults.filter(r => r.unitPrice > 0);
     if (validResults.length === 0) return null;
     return validResults.reduce((min, current) => 
       current.tenYearTotal < min.tenYearTotal ? current : min
     ).series;
-  }, [calculationResults]);
+  }, [calculationResults, hasCalculated]);
 
-  const chartData = calculationResults
+  const chartData = hasCalculated ? calculationResults
     .filter(r => r.unitPrice > 0)
     .map(r => ({
       series: r.series,
       cost: r.tenYearTotal,
       isCheapest: r.series === cheapestSeries
-    }));
+    })) : [];
 
   const handlePriceChange = (series: Series, value: string) => {
-    // 数字のみを抽出
-    const numericValue = value.replace(/[^0-9]/g, '');
-    
-    if (numericValue === '') {
-      setUnitPrices(prev => ({ ...prev, [series]: '' }));
-      return;
-    }
-    
-    // カンマ区切りでフォーマットして表示
-    const formattedValue = new Intl.NumberFormat('ja-JP').format(parseInt(numericValue));
-    setUnitPrices(prev => ({ ...prev, [series]: formattedValue }));
+    // 入力中は生の値をそのまま保存（フォーマットしない）
+    setUnitPrices(prev => ({ ...prev, [series]: value }));
   };
   
   const formatCurrency = (amount: number) => 
@@ -343,12 +361,47 @@ const App: React.FC = () => {
                   <span>☀️ 冷房のみ</span>
                 </div>
               </div>
+
+              {/* 計算ボタン */}
+              <div style={{
+                textAlign: 'center',
+                padding: '1.5rem 0'
+              }}>
+                <button
+                  onClick={calculateResults}
+                  style={{
+                    backgroundColor: '#dc2626',
+                    color: 'white',
+                    fontSize: '1.25rem',
+                    fontWeight: 'bold',
+                    padding: '1rem 2rem',
+                    borderRadius: '12px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)',
+                    transition: 'all 0.2s ease',
+                    minWidth: '200px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#b91c1c';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(220, 38, 38, 0.4)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#dc2626';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(220, 38, 38, 0.3)';
+                  }}
+                >
+                  🧮 費用を計算する
+                </button>
+              </div>
             </div>
             </div>
           </div>
 
           {/* 結果表示 */}
-          {calculationResults.some(r => r.unitPrice > 0) && (
+          {hasCalculated && calculationResults.some(r => r.unitPrice > 0) && (
             <div style={{ display: 'grid', gap: '2rem' }}>
               {/* テーブル */}
               <div style={{ 
@@ -491,6 +544,8 @@ const App: React.FC = () => {
                           tick={{ fontSize: 11, fill: '#374151' }}
                           axisLine={{ stroke: '#d1d5db' }}
                           tickFormatter={(value) => `¥${Math.round(value / 10000)}万`}
+                          tickCount={8}
+                          domain={['dataMin - 20000', 'dataMax + 20000']}
                         />
                         <Tooltip 
                           formatter={(value: number) => [formatCurrency(value), '10年総費用']}
