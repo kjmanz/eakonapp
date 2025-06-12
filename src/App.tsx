@@ -158,9 +158,6 @@ const App: React.FC = () => {
   const formatCurrency = (amount: number) => 
     `¥${new Intl.NumberFormat('ja-JP').format(amount)}`;
 
-  // 年数オプション
-  const yearOptions = [10, 15];
-
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f7fafc', fontFamily: 'system-ui, sans-serif', color: '#2d3748' }}>
       {/* ヘッダー */}
@@ -481,7 +478,7 @@ const App: React.FC = () => {
                           axisLine={{ stroke: '#cbd5e0' }}
                           tickLine={false}
                           scale="log"
-                          tickFormatter={(value) => `¥${Math.round(value / 10000)}万`}
+                          tickFormatter={(value: number) => `¥${Math.round(value / 10000)}万`}
                           ticks={yTicks}
                           domain={yTicks.length > 1 ? [yTicks[0], yTicks[yTicks.length - 1]] : undefined}
                         />
