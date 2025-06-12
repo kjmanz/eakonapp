@@ -22,12 +22,12 @@ type CalculationResult = {
 
 const App: React.FC = () => {
   // State管理
-  const [selectedScenarioId, setSelectedScenarioId] = useState<string>(scenarios[0].id);
-  const initialScenario = scenarios[0];
+  const defaultScenario = scenarios.find(s => s.id === 'telework') ?? scenarios[0];
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>(defaultScenario.id);
   const [selectedTatami, setSelectedTatami] = useState<TatamiSize>(6);
   const [unitPrices, setUnitPrices] = useState({ XS: '', EX: '', J: '' });
-  const [dailyHours, setDailyHours] = useState(initialScenario.dailyHours);
-  const [coolRatio, setCoolRatio] = useState(initialScenario.coolRatio);
+  const [dailyHours, setDailyHours] = useState(defaultScenario.dailyHours);
+  const [coolRatio, setCoolRatio] = useState(defaultScenario.coolRatio);
   const [years, setYears] = useState(10); // 10 or 15 年
   const [calculationResults, setCalculationResults] = useState<CalculationResult[]>([]);
   const [hasCalculated, setHasCalculated] = useState(false);
@@ -144,19 +144,23 @@ const App: React.FC = () => {
       isCheapest: r.series === cheapestSeries
     })) : [];
 
-  // Y軸の目盛りを 10万円刻みに設定（対数スケールでさらに差を圧縮）
+  // ① コストの最小・最大を先に計算しておく ------------- //
+  const minCost = useMemo(() => (
+    chartData.length ? Math.min(...chartData.map(c => c.cost)) : 0
+  ), [chartData]);
+
+  const maxCost = useMemo(() => (
+    chartData.length ? Math.max(...chartData.map(c => c.cost)) : 0
+  ), [chartData]);
+
+  // Y軸：10 万円刻み（0・10万・20万 …）
   const yTicks = useMemo(() => {
     if (chartData.length === 0) return [] as number[];
-    const costs = chartData.map(c => c.cost);
-    const min = 100000; // 対数スケールでは 0 を使えない
-    const max = Math.ceil(Math.max(...costs) / 100000) * 100000;
-    const step = 100000; // 10万円刻み
-    const paddedMax = max + step * 3; // さらに余白
-    const arr: number[] = [];
-    for (let v = min; v <= paddedMax; v += step) arr.push(v);
-    if (arr[arr.length - 1] !== paddedMax) arr.push(paddedMax);
-    return arr;
-  }, [chartData]);
+    const end = Math.ceil(maxCost / 100000) * 100000;
+    const ticks: number[] = [];
+    for (let v = 0; v <= end; v += 100000) ticks.push(v);
+    return ticks;
+  }, [maxCost]);
 
   const handlePriceChange = (series: Series, value: string) => {
     // 入力中は生の値をそのまま保存（フォーマットしない）
@@ -196,6 +200,7 @@ const App: React.FC = () => {
             borderRadius: '8px', 
             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
             border: '1px solid #e2e8f0',
+            minWidth: 0
           }}>
             <div style={{ padding: '1.5rem', borderBottom: '1px solid #e2e8f0' }}>
               <h2 style={{ 
@@ -360,6 +365,7 @@ const App: React.FC = () => {
                 borderRadius: '8px', 
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
                 border: '1px solid #e2e8f0',
+                minWidth: 0
               }}>
                 <div style={{ 
                   padding: '1.5rem', 
@@ -397,53 +403,48 @@ const App: React.FC = () => {
                     ))}
                   </div>
                 </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.875rem' }}>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', minWidth: 0 }}>
+                  <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.875rem' }}>
                     <thead style={{ backgroundColor: '#f7fafc' }}>
                       <tr>
-                        <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096' }}>シリーズ</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096', display: isWideScreen ? 'table-cell' : 'none' }}>品番</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096' }}>本体価格</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', display: 'none' }}>冷房kWh/年</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', display: 'none' }}>暖房kWh/年</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096' }}>{years}年総費用</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096' }}>一月に換算</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096' }}>一日に換算</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>シリーズ</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096', display: isWideScreen ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0' }}>品番</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>本体価格</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>年間消費電力量</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>{years}年総費用</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>一月に換算</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>一日に換算</th>
                       </tr>
                     </thead>
                     <tbody>
                       {calculationResults.filter(r => r.unitPrice > 0).map((result) => {
-                        const isCheapest = result.series === cheapestSeries;
                         return (
                           <tr
                             key={result.series}
                             style={{
                               borderTop: '1px solid #e2e8f0',
-                              backgroundColor: isCheapest ? '#ebf8ff' : 'white'
+                              backgroundColor: 'white'
                             }}
                           >
-                            <td style={{ padding: '0.75rem', fontWeight: '600', color: isCheapest ? '#2b6cb0' : '#2d3748' }}>
+                            <td style={{ padding: '0.75rem', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
                               {result.series}
                             </td>
-                            <td style={{ padding: '0.75rem', color: '#4a5568', display: isWideScreen ? 'table-cell' : 'none' }}>
+                            <td style={{ padding: '0.75rem', color: '#4a5568', display: isWideScreen ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0' }}>
                               {result.model ?? '—'}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', color: '#4a5568' }}>
+                            <td style={{ padding: '0.75rem', textAlign: 'right', color: '#4a5568', borderRight: '1px solid #e2e8f0' }}>
                               {formatCurrency(result.unitPrice)}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', color: '#4a5568', display: 'none' }}>
-                              {result.coolKWh}kWh
+                            <td style={{ padding: '0.75rem', textAlign: 'right', color: '#4a5568', borderRight: '1px solid #e2e8f0' }}>
+                              {result.coolKWh + result.heatKWh}kWh
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', color: '#4a5568', display: 'none' }}>
-                              {result.heatKWh}kWh
-                            </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: isCheapest ? '#2b6cb0' : '#2d3748' }}>
+                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
                               {formatCurrency(Math.round(result.totalCost))}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: isCheapest ? '#2b6cb0' : '#2d3748' }}>
+                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
                               {formatCurrency(Math.round(result.monthlyCost))}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: isCheapest ? '#2b6cb0' : '#2d3748' }}>
+                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
                               {formatCurrency(Math.round(result.dailyCost))}
                             </td>
                           </tr>
@@ -481,14 +482,14 @@ const App: React.FC = () => {
                           axisLine={{ stroke: '#cbd5e0' }}
                           tickLine={false}
                         />
-                        <YAxis 
+                        <YAxis
                           tick={{ fontSize: 11, fill: '#718096' }}
                           axisLine={{ stroke: '#cbd5e0' }}
                           tickLine={false}
-                          scale="log"
-                          tickFormatter={(value: number) => `¥${Math.round(value / 10000)}万`}
+                          scale="linear"
+                          domain={[0, yTicks[yTicks.length - 1]]}
                           ticks={yTicks}
-                          domain={yTicks.length > 1 ? [yTicks[0], yTicks[yTicks.length - 1]] : undefined}
+                          tickFormatter={(v: number) => `¥${Math.round(v / 10000)}万`}
                         />
                         <Tooltip 
                           formatter={(value: number) => [formatCurrency(Math.round(value)), `${years}年総費用`]}
