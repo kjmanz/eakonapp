@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { acSpecs, kWhCostWithTax } from './data/acSpecs';
-import { scenarios, Scenario } from './data/scenarios';
+import { scenarios } from './data/scenarios';
 
 // 型定義
 type TatamiSize = keyof typeof acSpecs;
@@ -127,12 +127,6 @@ const App: React.FC = () => {
       current.totalCost < min.totalCost ? current : min
     ).series;
   }, [calculationResults, hasCalculated]);
-
-  const cheapestTotalCost = useMemo(() => {
-    const validResults = calculationResults.filter(r => r.unitPrice > 0);
-    if (validResults.length === 0) return 0;
-    return Math.min(...validResults.map(r => r.totalCost));
-  }, [calculationResults]);
 
   const chartData = hasCalculated ? calculationResults
     .filter(r => r.unitPrice > 0)
@@ -413,7 +407,7 @@ const App: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {calculationResults.filter(r => r.unitPrice > 0).map((result, index) => {
+                      {calculationResults.filter(r => r.unitPrice > 0).map((result) => {
                         const isCheapest = result.series === cheapestSeries;
                         return (
                           <tr
