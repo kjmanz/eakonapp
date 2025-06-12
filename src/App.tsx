@@ -398,7 +398,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.875rem' }}>
+                  <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.875rem' }}>
                     <thead style={{ backgroundColor: '#f7fafc' }}>
                       <tr>
                         <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096' }}>シリーズ</th>
@@ -407,8 +407,8 @@ const App: React.FC = () => {
                         <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', display: 'none' }}>冷房kWh/年</th>
                         <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', display: 'none' }}>暖房kWh/年</th>
                         <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096' }}>{years}年総費用</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', display: isWideScreen ? 'table-cell' : 'none' }}>一月に換算</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', display: isWideScreen ? 'table-cell' : 'none' }}>一日に換算</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096' }}>一月に換算</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096' }}>一日に換算</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -440,10 +440,10 @@ const App: React.FC = () => {
                             <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: isCheapest ? '#2b6cb0' : '#2d3748' }}>
                               {formatCurrency(Math.round(result.totalCost))}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: isCheapest ? '#2b6cb0' : '#2d3748', display: isWideScreen ? 'table-cell' : 'none' }}>
+                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: isCheapest ? '#2b6cb0' : '#2d3748' }}>
                               {formatCurrency(Math.round(result.monthlyCost))}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: isCheapest ? '#2b6cb0' : '#2d3748', display: isWideScreen ? 'table-cell' : 'none' }}>
+                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: isCheapest ? '#2b6cb0' : '#2d3748' }}>
                               {formatCurrency(Math.round(result.dailyCost))}
                             </td>
                           </tr>
