@@ -144,11 +144,7 @@ const App: React.FC = () => {
       isCheapest: r.series === cheapestSeries
     })) : [];
 
-  // ① コストの最小・最大を先に計算しておく ------------- //
-  const minCost = useMemo(() => (
-    chartData.length ? Math.min(...chartData.map(c => c.cost)) : 0
-  ), [chartData]);
-
+  // ① コストの最大値を計算しておく ------------- //
   const maxCost = useMemo(() => (
     chartData.length ? Math.max(...chartData.map(c => c.cost)) : 0
   ), [chartData]);
