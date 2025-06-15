@@ -1,7 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { acSpecs, kWhCostWithTax } from './data/acSpecs';
 import { scenarios } from './data/scenarios';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // 型定義
 type TatamiSize = keyof typeof acSpecs;
@@ -32,6 +34,12 @@ const App: React.FC = () => {
   const [calculationResults, setCalculationResults] = useState<CalculationResult[]>([]);
   const [hasCalculated, setHasCalculated] = useState(false);
   const [isWideScreen, setIsWideScreen] = useState(window.matchMedia("(min-width: 768px)").matches);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const pdfCaptureRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLDivElement>(null);
+  const resultsHeaderRef = useRef<HTMLHeadingElement>(null);
+  const pdfButtonContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(min-width: 768px)");
@@ -165,6 +173,75 @@ const App: React.FC = () => {
   
   const formatCurrency = (amount: number) => 
     `¥${new Intl.NumberFormat('ja-JP').format(amount)}`;
+
+  const handleCreatePdf = async () => {
+    if (!pdfCaptureRef.current || !toggleRef.current || !resultsHeaderRef.current || !pdfButtonContainerRef.current) return;
+    setIsModalOpen(false);
+
+    const pdfArea = pdfCaptureRef.current;
+    const toggle = toggleRef.current;
+    const header = resultsHeaderRef.current;
+    const pdfButtonContainer = pdfButtonContainerRef.current;
+    const originalHeaderText = header.innerText;
+
+    // 日付要素を作成
+    const today = new Date();
+    const dateString = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日作成`;
+    const dateElement = document.createElement('div');
+    dateElement.innerText = dateString;
+    dateElement.style.position = 'absolute';
+    dateElement.style.top = '1.5rem';
+    dateElement.style.right = '1.5rem';
+    dateElement.style.fontSize = '0.75rem';
+    dateElement.style.color = '#718096';
+
+    // PDFキャプチャ用にDOMを準備
+    toggle.style.display = 'none';
+    pdfButtonContainer.style.display = 'none'; // PDFボタンを非表示に
+    header.innerText = `${customerName} 様 ${years}年間の総費用比較`;
+    pdfArea.style.position = 'relative'; // 日付要素の絶対配置のため
+    pdfArea.appendChild(dateElement); // 日付要素を追加
+
+    try {
+      const canvas = await html2canvas(pdfArea, {
+        scale: 2, // 高解像度化
+        useCORS: true,
+        backgroundColor: '#ffffff',
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+      const canvasAspectRatio = canvasWidth / canvasHeight;
+      
+      const margin = 10;
+      const contentWidth = pdfWidth - (margin * 2);
+      const contentHeight = contentWidth / canvasAspectRatio;
+
+      // コンテンツが1ページに収まらない場合は、複数ページに分割（今回は1ページ想定でシンプルに）
+      let finalHeight = contentHeight;
+      if (finalHeight > pdfHeight - (margin * 2)) {
+          finalHeight = pdfHeight - (margin * 2);
+      }
+      
+      pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, finalHeight);
+
+      const fileName = `エアコン費用シミュレーション_${customerName || 'お客様'}.pdf`;
+      pdf.save(fileName);
+      setCustomerName('');
+    } finally {
+      // DOMを元に戻す
+      toggle.style.display = 'inline-flex';
+      pdfButtonContainer.style.display = 'block'; // PDFボタンを再表示
+      header.innerText = originalHeaderText;
+      pdfArea.removeChild(dateElement); // 日付要素を削除
+      pdfArea.style.position = ''; // スタイルを元に戻す
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f7fafc', fontFamily: 'system-ui, sans-serif', color: '#2d3748' }}>
@@ -354,7 +431,7 @@ const App: React.FC = () => {
 
           {/* 結果表示 */}
           {hasCalculated && calculationResults.some(r => r.unitPrice > 0) && (
-            <div style={{ display: 'grid', gap: '2rem' }}>
+            <div id="pdf-capture-area" ref={pdfCaptureRef} style={{ display: 'grid', gap: '2rem', padding: '1.5rem', backgroundColor: 'white' }}>
               {/* テーブル */}
               <div style={{ 
                 backgroundColor: 'white', 
@@ -370,7 +447,7 @@ const App: React.FC = () => {
                   justifyContent: 'space-between',
                   alignItems: 'center'
                 }}>
-                  <h2 style={{ 
+                  <h2 ref={resultsHeaderRef} style={{ 
                     fontSize: '1.25rem', 
                     fontWeight: 'bold', 
                     margin: 0
@@ -378,7 +455,7 @@ const App: React.FC = () => {
                     {years}年間の総費用比較
                   </h2>
                   {/* 期間トグル */}
-                  <div style={{ display: 'inline-flex', backgroundColor: '#edf2f7', borderRadius: '6px', overflow: 'hidden' }}>
+                  <div ref={toggleRef} style={{ display: 'inline-flex', backgroundColor: '#edf2f7', borderRadius: '6px', overflow: 'hidden' }}>
                     {[10, 15].map((y) => (
                       <button
                         key={y}
@@ -507,6 +584,108 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* PDF作成ボタン */}
+              <div ref={pdfButtonContainerRef} style={{
+                textAlign: 'center',
+                paddingTop: '1rem',
+                borderTop: '1px solid #e2e8f0',
+                marginTop: '0.5rem'
+              }}>
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  style={{
+                    backgroundColor: '#38a169',
+                    color: 'white',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    width: '100%',
+                    transition: 'background-color 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2f855a'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#38a169'}
+                >
+                  PDFで保存する
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* お客様名入力モーダル */}
+          {isModalOpen && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+            }}>
+              <div style={{
+                backgroundColor: 'white',
+                padding: '2rem',
+                borderRadius: '8px',
+                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+                width: '90%',
+                maxWidth: '400px',
+              }}>
+                <h3 style={{ marginTop: 0, marginBottom: '1.5rem', fontSize: '1.25rem' }}>お客様名を入力してください</h3>
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="例：山田 太郎"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    fontSize: '1rem',
+                    border: '1px solid #cbd5e0',
+                    borderRadius: '6px',
+                    marginBottom: '1.5rem',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                  <button
+                    onClick={() => setIsModalOpen(false)}
+                    style={{
+                      backgroundColor: '#718096',
+                      color: 'white',
+                      fontSize: '1rem',
+                      fontWeight: 'bold',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={handleCreatePdf}
+                    style={{
+                      backgroundColor: '#38a169',
+                      color: 'white',
+                      fontSize: '1rem',
+                      fontWeight: 'bold',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    PDF作成
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
