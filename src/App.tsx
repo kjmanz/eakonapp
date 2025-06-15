@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [isWideScreen, setIsWideScreen] = useState(window.matchMedia("(min-width: 768px)").matches);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
+  const [isPdfRendering, setIsPdfRendering] = useState(false);
   const pdfCaptureRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLDivElement>(null);
   const resultsHeaderRef = useRef<HTMLHeadingElement>(null);
@@ -127,6 +128,92 @@ const App: React.FC = () => {
     setHasCalculated(true);
   };
 
+  const startPdfCreation = () => {
+    setIsModalOpen(false);
+    setIsPdfRendering(true);
+  };
+
+  useEffect(() => {
+    if (!isPdfRendering) return;
+
+    const generatePdf = async () => {
+      if (!pdfCaptureRef.current || !toggleRef.current || !resultsHeaderRef.current || !pdfButtonContainerRef.current) {
+        setIsPdfRendering(false);
+        return;
+      }
+
+      const pdfArea = pdfCaptureRef.current;
+      const toggle = toggleRef.current;
+      const header = resultsHeaderRef.current;
+      const pdfButtonContainer = pdfButtonContainerRef.current;
+      const originalHeaderText = header.innerText;
+
+      // 日付要素を作成
+      const today = new Date();
+      const dateString = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日作成`;
+      const dateElement = document.createElement('div');
+      dateElement.innerText = dateString;
+      dateElement.style.position = 'absolute';
+      dateElement.style.top = '1.5rem';
+      dateElement.style.right = '1.5rem';
+      dateElement.style.fontSize = '0.75rem';
+      dateElement.style.color = '#718096';
+
+      // PDFキャプチャ用にDOMを準備
+      toggle.style.display = 'none';
+      pdfButtonContainer.style.display = 'none'; // PDFボタンを非表示に
+      header.innerText = `${customerName} 様 ${years}年間の総費用比較`;
+      pdfArea.style.position = 'relative'; // 日付要素の絶対配置のため
+      pdfArea.appendChild(dateElement); // 日付要素を追加
+
+      try {
+        const canvas = await html2canvas(pdfArea, {
+          scale: 2, // 高解像度化
+          useCORS: true,
+          backgroundColor: '#ffffff',
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const canvasAspectRatio = canvasWidth / canvasHeight;
+        
+        const margin = 10;
+        const contentWidth = pdfWidth - (margin * 2);
+        const contentHeight = contentWidth / canvasAspectRatio;
+
+        // コンテンツが1ページに収まらない場合は、複数ページに分割（今回は1ページ想定でシンプルに）
+        let finalHeight = contentHeight;
+        if (finalHeight > pdfHeight - (margin * 2)) {
+            finalHeight = pdfHeight - (margin * 2);
+        }
+        
+        pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, finalHeight);
+
+        const fileName = `エアコン費用シミュレーション_${customerName || 'お客様'}.pdf`;
+        pdf.save(fileName);
+        
+      } finally {
+        // DOMを元に戻す
+        toggle.style.display = 'inline-flex';
+        pdfButtonContainer.style.display = 'block'; // PDFボタンを再表示
+        header.innerText = originalHeaderText;
+        pdfArea.removeChild(dateElement); // 日付要素を削除
+        pdfArea.style.position = ''; // スタイルを元に戻す
+        setCustomerName('');
+        setIsPdfRendering(false);
+      }
+    };
+    
+    const timerId = setTimeout(generatePdf, 100);
+    return () => clearTimeout(timerId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPdfRendering]);
+
   // 年数変更で自動再計算
   React.useEffect(() => {
     if (hasCalculated) {
@@ -173,75 +260,6 @@ const App: React.FC = () => {
   
   const formatCurrency = (amount: number) => 
     `¥${new Intl.NumberFormat('ja-JP').format(amount)}`;
-
-  const handleCreatePdf = async () => {
-    if (!pdfCaptureRef.current || !toggleRef.current || !resultsHeaderRef.current || !pdfButtonContainerRef.current) return;
-    setIsModalOpen(false);
-
-    const pdfArea = pdfCaptureRef.current;
-    const toggle = toggleRef.current;
-    const header = resultsHeaderRef.current;
-    const pdfButtonContainer = pdfButtonContainerRef.current;
-    const originalHeaderText = header.innerText;
-
-    // 日付要素を作成
-    const today = new Date();
-    const dateString = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日作成`;
-    const dateElement = document.createElement('div');
-    dateElement.innerText = dateString;
-    dateElement.style.position = 'absolute';
-    dateElement.style.top = '1.5rem';
-    dateElement.style.right = '1.5rem';
-    dateElement.style.fontSize = '0.75rem';
-    dateElement.style.color = '#718096';
-
-    // PDFキャプチャ用にDOMを準備
-    toggle.style.display = 'none';
-    pdfButtonContainer.style.display = 'none'; // PDFボタンを非表示に
-    header.innerText = `${customerName} 様 ${years}年間の総費用比較`;
-    pdfArea.style.position = 'relative'; // 日付要素の絶対配置のため
-    pdfArea.appendChild(dateElement); // 日付要素を追加
-
-    try {
-      const canvas = await html2canvas(pdfArea, {
-        scale: 2, // 高解像度化
-        useCORS: true,
-        backgroundColor: '#ffffff',
-      });
-      
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const canvasWidth = canvas.width;
-      const canvasHeight = canvas.height;
-      const canvasAspectRatio = canvasWidth / canvasHeight;
-      
-      const margin = 10;
-      const contentWidth = pdfWidth - (margin * 2);
-      const contentHeight = contentWidth / canvasAspectRatio;
-
-      // コンテンツが1ページに収まらない場合は、複数ページに分割（今回は1ページ想定でシンプルに）
-      let finalHeight = contentHeight;
-      if (finalHeight > pdfHeight - (margin * 2)) {
-          finalHeight = pdfHeight - (margin * 2);
-      }
-      
-      pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, finalHeight);
-
-      const fileName = `エアコン費用シミュレーション_${customerName || 'お客様'}.pdf`;
-      pdf.save(fileName);
-      setCustomerName('');
-    } finally {
-      // DOMを元に戻す
-      toggle.style.display = 'inline-flex';
-      pdfButtonContainer.style.display = 'block'; // PDFボタンを再表示
-      header.innerText = originalHeaderText;
-      pdfArea.removeChild(dateElement); // 日付要素を削除
-      pdfArea.style.position = ''; // スタイルを元に戻す
-    }
-  };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f7fafc', fontFamily: 'system-ui, sans-serif', color: '#2d3748' }}>
@@ -431,7 +449,13 @@ const App: React.FC = () => {
 
           {/* 結果表示 */}
           {hasCalculated && calculationResults.some(r => r.unitPrice > 0) && (
-            <div id="pdf-capture-area" ref={pdfCaptureRef} style={{ display: 'grid', gap: '2rem', padding: '1.5rem', backgroundColor: 'white' }}>
+            <div id="pdf-capture-area" ref={pdfCaptureRef} style={{ 
+              display: 'grid', 
+              gap: '2rem', 
+              padding: '1.5rem', 
+              backgroundColor: 'white',
+              width: isPdfRendering ? '1024px' : undefined,
+            }}>
               {/* テーブル */}
               <div style={{ 
                 backgroundColor: 'white', 
@@ -481,7 +505,7 @@ const App: React.FC = () => {
                     <thead style={{ backgroundColor: '#f7fafc' }}>
                       <tr>
                         <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>シリーズ</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096', display: isWideScreen ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0' }}>品番</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096', display: (isWideScreen || isPdfRendering) ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0' }}>品番</th>
                         <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>本体価格</th>
                         <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>年間消費電力量</th>
                         <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>{years}年総費用</th>
@@ -502,7 +526,7 @@ const App: React.FC = () => {
                             <td style={{ padding: '0.75rem', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
                               {result.series}
                             </td>
-                            <td style={{ padding: '0.75rem', color: '#4a5568', display: isWideScreen ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '0.75rem', color: '#4a5568', display: (isWideScreen || isPdfRendering) ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0' }}>
                               {result.model ?? '—'}
                             </td>
                             <td style={{ padding: '0.75rem', textAlign: 'right', color: '#4a5568', borderRight: '1px solid #e2e8f0' }}>
@@ -574,7 +598,7 @@ const App: React.FC = () => {
                           }}
                           labelStyle={{ fontWeight: 'bold' }}
                         />
-                        <Bar dataKey="cost" radius={[4, 4, 0, 0]}>
+                        <Bar dataKey="cost" radius={[4, 4, 0, 0]} isAnimationActive={!isPdfRendering}>
                           {chartData.map((entry) => (
                             <Cell key={`cell-${entry.series}`} fill={'#4299e1'} />
                           ))}
@@ -670,7 +694,7 @@ const App: React.FC = () => {
                     キャンセル
                   </button>
                   <button
-                    onClick={handleCreatePdf}
+                    onClick={startPdfCreation}
                     style={{
                       backgroundColor: '#38a169',
                       color: 'white',
