@@ -155,8 +155,8 @@ const App: React.FC = () => {
       const dateElement = document.createElement('div');
       dateElement.innerText = dateString;
       dateElement.style.position = 'absolute';
-      dateElement.style.top = '1.5rem';
-      dateElement.style.right = '1.5rem';
+      dateElement.style.top = '2.0rem';
+      dateElement.style.right = '2.0rem';
       dateElement.style.fontSize = '0.75rem';
       dateElement.style.color = '#718096';
 
@@ -263,25 +263,12 @@ const App: React.FC = () => {
     `¥${new Intl.NumberFormat('ja-JP').format(amount)}`;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f7fafc', fontFamily: 'system-ui, sans-serif', color: '#2d3748' }}>
-      {/* ヘッダー */}
-      <header style={{ 
-        backgroundColor: 'white', 
-        borderBottom: '1px solid #e2e8f0',
-        padding: '1rem 0'
-      }}>
-        <div style={{ maxWidth: '1024px', margin: '0 auto', padding: '0 1rem' }}>
-          <h1 style={{ 
-            fontSize: '1.5rem', 
-            fontWeight: 'bold', 
-            textAlign: 'center',
-            color: '#2d3748',
-            margin: 0
-          }}>
-            エアコン総費用シミュレーター
-          </h1>
-        </div>
-      </header>
+    <div className="container mx-auto p-4 max-w-4xl" ref={pdfCaptureRef} style={{ fontSize: '16px' }}>
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">
+          Panasonicルームエアコン 費用対効果シミュレーター
+        </h1>
+      </div>
 
       <main style={{ maxWidth: '1024px', margin: '2rem auto', padding: '0 1rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem' }}>

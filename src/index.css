@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 /* Reset and Base Styles */
+html {
+  font-size: 16px;
+}
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -113,4 +116,8 @@ input[type="range"]:focus::-webkit-slider-thumb {
   th, td {
     padding: 0.5rem 0.25rem !important;
   }
+}
+
+.pdf-rendering {
+  font-size: 22px !important;
 } 

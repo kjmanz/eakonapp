@@ -4,7 +4,7 @@ const tableCellStyle: React.CSSProperties = {
   border: '1px solid #cccccc',
   padding: '12px',
   textAlign: 'left',
-  fontSize: '14px',
+  fontSize: '16px',
   verticalAlign: 'top',
   lineHeight: '1.5',
 };
@@ -13,14 +13,14 @@ const thCellStyle: React.CSSProperties = {
   ...tableCellStyle,
   backgroundColor: '#f7fafc',
   fontWeight: 'bold',
-  fontSize: '15px',
+  fontSize: '17px',
 };
 
 const FeatureTable: React.FC = () => {
   return (
     <div style={{ marginTop: '2rem', pageBreakBefore: 'always' }}>
       <h3 style={{ 
-        fontSize: '20px',
+        fontSize: '24px',
         fontWeight: 'bold', 
         margin: '0 0 1rem 0', 
         paddingBottom: '0.5rem',
@@ -59,7 +59,7 @@ const FeatureTable: React.FC = () => {
           </tr>
           <tr>
             <td style={tableCellStyle}><strong style={{ display: 'block', marginBottom: '0.25rem' }}>フィルター掃除方式</strong>ゴミ自動排出おそうじロボ</td>
-            <td style={tableCellStyle}><strong style={{ display: 'block', marginBottom: '0.25rem', color: 'transparent', userSelect: 'none' }}>&nbsp;</strong>自動排出ロボ（BOX式）</td>
+            <td style={tableCellStyle}><strong style={{ display: 'block', marginBottom: '0.25rem', color: 'transparent', userSelect: 'none' }}>&nbsp;</strong>ゴミ自動排出おそうじロボ</td>
             <td style={tableCellStyle}><strong style={{ display: 'block', marginBottom: '0.25rem', color: 'transparent', userSelect: 'none' }}>&nbsp;</strong>抗菌フィルター（手動）</td>
           </tr>
           <tr>
