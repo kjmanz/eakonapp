@@ -40,7 +40,6 @@ const App: React.FC = () => {
   const [isPdfRendering, setIsPdfRendering] = useState(false);
   const pdfCaptureRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLDivElement>(null);
-  const resultsHeaderRef = useRef<HTMLHeadingElement>(null);
   const pdfButtonContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -138,16 +137,16 @@ const App: React.FC = () => {
     if (!isPdfRendering) return;
 
     const generatePdf = async () => {
-      if (!pdfCaptureRef.current || !toggleRef.current || !resultsHeaderRef.current || !pdfButtonContainerRef.current) {
+      if (!pdfCaptureRef.current || !toggleRef.current || !pdfButtonContainerRef.current) {
         setIsPdfRendering(false);
         return;
       }
 
       const pdfArea = pdfCaptureRef.current;
       const toggle = toggleRef.current;
-      const header = resultsHeaderRef.current;
       const pdfButtonContainer = pdfButtonContainerRef.current;
-      const originalHeaderText = header.innerText;
+
+      pdfArea.classList.add('pdf-rendering');
 
       // 日付要素を作成
       const today = new Date();
@@ -163,7 +162,6 @@ const App: React.FC = () => {
       // PDFキャプチャ用にDOMを準備
       toggle.style.display = 'none';
       pdfButtonContainer.style.display = 'none'; // PDFボタンを非表示に
-      header.innerText = `${customerName} 様 ${years}年間の総費用比較`;
       pdfArea.style.position = 'relative'; // 日付要素の絶対配置のため
       pdfArea.appendChild(dateElement); // 日付要素を追加
 
@@ -202,9 +200,9 @@ const App: React.FC = () => {
         // DOMを元に戻す
         toggle.style.display = 'inline-flex';
         pdfButtonContainer.style.display = 'block'; // PDFボタンを再表示
-        header.innerText = originalHeaderText;
         pdfArea.removeChild(dateElement); // 日付要素を削除
         pdfArea.style.position = ''; // スタイルを元に戻す
+        pdfArea.classList.remove('pdf-rendering'); // PDF生成用のクラスを削除
         setCustomerName('');
         setIsPdfRendering(false);
       }
@@ -459,15 +457,11 @@ const App: React.FC = () => {
                   justifyContent: 'space-between',
                   alignItems: 'center'
                 }}>
-                  <h2 ref={resultsHeaderRef} style={{ 
-                    fontSize: isPdfRendering ? '22px' : '1.25rem', 
-                    fontWeight: 'bold', 
-                    margin: 0
-                  }}>
+                  <h2 className="text-2xl font-bold text-gray-800">
                     {years}年間の総費用比較
                   </h2>
                   {/* 期間トグル */}
-                  <div ref={toggleRef} style={{ display: 'inline-flex', backgroundColor: '#edf2f7', borderRadius: '6px', overflow: 'hidden' }}>
+                  <div ref={toggleRef} className="inline-flex rounded-md shadow-sm">
                     {[10, 15].map((y) => (
                       <button
                         key={y}
