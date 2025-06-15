@@ -4,6 +4,7 @@ import { acSpecs, kWhCostWithTax } from './data/acSpecs';
 import { scenarios } from './data/scenarios';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import FeatureTable from './components/FeatureTable';
 
 // 型定義
 type TatamiSize = keyof typeof acSpecs;
@@ -472,7 +473,7 @@ const App: React.FC = () => {
                   alignItems: 'center'
                 }}>
                   <h2 ref={resultsHeaderRef} style={{ 
-                    fontSize: '1.25rem', 
+                    fontSize: isPdfRendering ? '22px' : '1.25rem', 
                     fontWeight: 'bold', 
                     margin: 0
                   }}>
@@ -501,16 +502,16 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', minWidth: 0 }}>
-                  <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.875rem' }}>
+                  <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: isPdfRendering ? '14px' : '0.875rem' }}>
                     <thead style={{ backgroundColor: '#f7fafc' }}>
                       <tr>
-                        <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>シリーズ</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', color: '#718096', display: (isWideScreen || isPdfRendering) ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0' }}>品番</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>本体価格</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>年間消費電力量</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>{years}年総費用</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>一月に換算</th>
-                        <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#718096', borderRight: '1px solid #e2e8f0' }}>一日に換算</th>
+                        <th style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'left', fontWeight: 'bold', color: '#4a5568', borderRight: '1px solid #e2e8f0', borderBottom: '2px solid #e2e8f0' }}>シリーズ</th>
+                        <th style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'left', fontWeight: 'bold', color: '#4a5568', display: (isWideScreen || isPdfRendering) ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0', borderBottom: '2px solid #e2e8f0' }}>品番</th>
+                        <th style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', fontWeight: 'bold', color: '#4a5568', borderRight: '1px solid #e2e8f0', borderBottom: '2px solid #e2e8f0' }}>本体価格</th>
+                        <th style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', fontWeight: 'bold', color: '#4a5568', borderRight: '1px solid #e2e8f0', borderBottom: '2px solid #e2e8f0' }}>年間消費電力量</th>
+                        <th style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', fontWeight: 'bold', color: '#4a5568', borderRight: '1px solid #e2e8f0', borderBottom: '2px solid #e2e8f0' }}>{years}年総費用</th>
+                        <th style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', fontWeight: 'bold', color: '#4a5568', borderRight: '1px solid #e2e8f0', borderBottom: '2px solid #e2e8f0' }}>一月に換算</th>
+                        <th style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', fontWeight: 'bold', color: '#4a5568', borderRight: '1px solid #e2e8f0', borderBottom: '2px solid #e2e8f0' }}>一日に換算</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -523,25 +524,25 @@ const App: React.FC = () => {
                               backgroundColor: 'white'
                             }}
                           >
-                            <td style={{ padding: '0.75rem', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: isPdfRendering ? '12px' : '0.75rem', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
                               {result.series}
                             </td>
-                            <td style={{ padding: '0.75rem', color: '#4a5568', display: (isWideScreen || isPdfRendering) ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: isPdfRendering ? '12px' : '0.75rem', color: '#4a5568', display: (isWideScreen || isPdfRendering) ? 'table-cell' : 'none', borderRight: '1px solid #e2e8f0' }}>
                               {result.model ?? '—'}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', color: '#4a5568', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', color: '#4a5568', borderRight: '1px solid #e2e8f0' }}>
                               {formatCurrency(result.unitPrice)}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', color: '#4a5568', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', color: '#4a5568', borderRight: '1px solid #e2e8f0' }}>
                               {result.coolKWh + result.heatKWh}kWh
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
                               {formatCurrency(Math.round(result.totalCost))}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
                               {formatCurrency(Math.round(result.monthlyCost))}
                             </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: isPdfRendering ? '12px' : '0.75rem', textAlign: 'right', fontWeight: '600', color: '#2d3748', borderRight: '1px solid #e2e8f0' }}>
                               {formatCurrency(Math.round(result.dailyCost))}
                             </td>
                           </tr>
@@ -588,7 +589,7 @@ const App: React.FC = () => {
                           ticks={yTicks}
                           tickFormatter={(v: number) => `¥${Math.round(v / 10000)}万`}
                         />
-                        <Tooltip 
+                        {!isPdfRendering && <Tooltip 
                           formatter={(value: number) => [formatCurrency(Math.round(value)), `${years}年総費用`]}
                           contentStyle={{
                             backgroundColor: 'white',
@@ -597,7 +598,7 @@ const App: React.FC = () => {
                             boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
                           }}
                           labelStyle={{ fontWeight: 'bold' }}
-                        />
+                        />}
                         <Bar dataKey="cost" radius={[4, 4, 0, 0]} isAnimationActive={!isPdfRendering}>
                           {chartData.map((entry) => (
                             <Cell key={`cell-${entry.series}`} fill={'#4299e1'} />
@@ -608,6 +609,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
+              {isPdfRendering && <FeatureTable />}
 
               {/* PDF作成ボタン */}
               <div ref={pdfButtonContainerRef} style={{
