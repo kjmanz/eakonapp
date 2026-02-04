@@ -142,8 +142,14 @@ const App: React.FC = () => {
       isCheapest: r.series === cheapestSeries
     })), [calculationResults, cheapestSeries]);
 
+  const normalizeNumericInput = (value: string) =>
+    value
+      .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+      .replace(/[，．]/g, (char) => (char === '，' ? ',' : '.'));
+
   const handlePriceChange = (series: Series, value: string) => {
-    const numericValue = value.replace(/[^0-9]/g, '');
+    const normalizedValue = normalizeNumericInput(value);
+    const numericValue = normalizedValue.replace(/[^0-9]/g, '');
 
     if (numericValue === '') {
       setUnitPrices(prev => ({ ...prev, [series]: '' }));
