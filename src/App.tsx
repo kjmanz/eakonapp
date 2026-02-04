@@ -278,8 +278,10 @@ const App: React.FC = () => {
   const formatCurrency = (amount: number) =>
     `¥${new Intl.NumberFormat('ja-JP').format(Math.round(amount))}`;
 
-  // 印刷用エリアの参照
+  // 印刷用エリアの参照（JPG用：全体、PDF用：2ページ分割）
   const printRef = useRef<HTMLDivElement>(null);
+  const printPage1Ref = useRef<HTMLDivElement>(null);
+  const printPage2Ref = useRef<HTMLDivElement>(null);
 
   // 出力ダイアログを開く
   const openExportDialog = useCallback((type: 'jpg' | 'pdf') => {
@@ -289,31 +291,33 @@ const App: React.FC = () => {
 
   // 出力実行
   const handleExport = useCallback(async () => {
-    if (!printRef.current) return;
     setExportDialogOpen(false);
 
     // 少し待ってからキャプチャ（名前の表示を反映させるため）
     await new Promise(resolve => setTimeout(resolve, 100));
-
-    const canvas = await html2canvas(printRef.current, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      scrollY: -window.scrollY,
-      windowHeight: printRef.current.scrollHeight,
-    });
 
     const fileName = customerName
       ? `エアコン比較_${customerName}様_${selectedTatami}畳_${years}年`
       : `エアコン比較_${selectedTatami}畳_${years}年`;
 
     if (exportType === 'jpg') {
+      // JPG: 全体を1枚でキャプチャ
+      if (!printRef.current) return;
+      const canvas = await html2canvas(printRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        scrollY: -window.scrollY,
+        windowHeight: printRef.current.scrollHeight,
+      });
       const link = document.createElement('a');
       link.download = `${fileName}.jpg`;
       link.href = canvas.toDataURL('image/jpeg', 0.95);
       link.click();
     } else {
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      // PDF: 2ページに分割（文字を大きく）
+      if (!printPage1Ref.current || !printPage2Ref.current) return;
+
       const margin = 8;
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -322,12 +326,34 @@ const App: React.FC = () => {
       });
       const pdfWidth = pdf.internal.pageSize.getWidth() - margin * 2;
       const pdfHeight = pdf.internal.pageSize.getHeight() - margin * 2;
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-      const imgX = margin + (pdfWidth - imgWidth * ratio) / 2;
-      const imgY = margin;
-      pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+
+      // ページ1: 費用比較テーブル + グラフ
+      const canvas1 = await html2canvas(printPage1Ref.current, {
+        scale: 3, // 高解像度でキャプチャ
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        scrollY: -window.scrollY,
+        windowHeight: printPage1Ref.current.scrollHeight,
+      });
+      const imgData1 = canvas1.toDataURL('image/jpeg', 0.95);
+      const ratio1 = Math.min(pdfWidth / canvas1.width, pdfHeight / canvas1.height);
+      const imgX1 = margin + (pdfWidth - canvas1.width * ratio1) / 2;
+      pdf.addImage(imgData1, 'JPEG', imgX1, margin, canvas1.width * ratio1, canvas1.height * ratio1);
+
+      // ページ2: 機能比較表
+      pdf.addPage();
+      const canvas2 = await html2canvas(printPage2Ref.current, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        scrollY: -window.scrollY,
+        windowHeight: printPage2Ref.current.scrollHeight,
+      });
+      const imgData2 = canvas2.toDataURL('image/jpeg', 0.95);
+      const ratio2 = Math.min(pdfWidth / canvas2.width, pdfHeight / canvas2.height);
+      const imgX2 = margin + (pdfWidth - canvas2.width * ratio2) / 2;
+      pdf.addImage(imgData2, 'JPEG', imgX2, margin, canvas2.width * ratio2, canvas2.height * ratio2);
+
       pdf.save(`${fileName}.pdf`);
     }
   }, [customerName, exportType, selectedTatami, years]);
@@ -559,22 +585,22 @@ const App: React.FC = () => {
                   </Button>
                 </Stack>
 
-                {/* 印刷用エリア */}
-                <Box ref={printRef} sx={{ bgcolor: 'white', p: 3, borderRadius: 2 }}>
+                {/* JPG用：全体を1つにまとめた印刷エリア */}
+                <Box ref={printRef} sx={{ bgcolor: 'white', p: 2, borderRadius: 2 }}>
                   {/* ヘッダー（印刷用） */}
                   <Box sx={{ mb: 2, pb: 1, borderBottom: '3px solid #2563eb' }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
                       {customerName && (
-                        <Typography variant="h5" fontWeight="700" color="text.primary">
+                        <Typography variant="h6" fontWeight="700" color="text.primary">
                           {customerName} さま
                         </Typography>
                       )}
                       <Box sx={{ flex: 1 }} />
                     </Stack>
-                    <Typography variant="h4" fontWeight="700" color="primary.main" textAlign="center" sx={{ fontSize: '1.8rem' }}>
+                    <Typography variant="h5" fontWeight="700" color="primary.main" textAlign="center">
                       エアコン {selectedTatami}畳用 シリーズ比較表
                     </Typography>
-                    <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ mt: 1, fontSize: '1rem' }}>
+                    <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 0.5 }}>
                       使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100-coolRatio}% / 電気代 ¥{kWhCostWithTax}/kWh
                     </Typography>
                   </Box>
@@ -957,7 +983,326 @@ const App: React.FC = () => {
                   </TableContainer>
                 </Card>
                 </Box>
-                {/* 印刷用エリア終了 */}
+                {/* JPG用印刷エリア終了 */}
+
+                {/* PDF用ページ1: 費用比較 + グラフ（画面外に配置、大きな文字） */}
+                <Box
+                  ref={printPage1Ref}
+                  sx={{
+                    position: 'absolute',
+                    left: '-9999px',
+                    top: 0,
+                    width: '800px',
+                    bgcolor: 'white',
+                    p: 4,
+                  }}
+                >
+                  <Box sx={{ mb: 3, pb: 2, borderBottom: '4px solid #2563eb' }}>
+                    {customerName && (
+                      <Typography variant="h4" fontWeight="700" color="text.primary" sx={{ mb: 1 }}>
+                        {customerName} さま
+                      </Typography>
+                    )}
+                    <Typography variant="h3" fontWeight="700" color="primary.main" textAlign="center" sx={{ fontSize: '2.2rem' }}>
+                      エアコン {selectedTatami}畳用 シリーズ比較表
+                    </Typography>
+                    <Typography variant="h6" color="text.secondary" textAlign="center" sx={{ mt: 1 }}>
+                      使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100-coolRatio}% / 電気代 ¥{kWhCostWithTax}/kWh
+                    </Typography>
+                  </Box>
+
+                  {/* 費用比較テーブル */}
+                  <Card sx={{ mb: 3 }}>
+                    <Box sx={{ p: 2, borderBottom: '2px solid #e2e8f0' }}>
+                      <Typography variant="h5" fontWeight="700" color="primary.main">
+                        {years}年総費用比較
+                      </Typography>
+                      <Typography variant="body1" color="text.secondary">
+                        本体価格 + {years}年間の電気代
+                      </Typography>
+                    </Box>
+                    <TableContainer>
+                      <Table>
+                        <TableHead>
+                          <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                            <TableCell align="center" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>シリーズ</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>本体価格</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>年間電気代</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{years}年電気代</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700, fontSize: '1.1rem', color: 'primary.main' }}>{years}年総費用</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {calculationResults.filter(r => r.unitPrice > 0).map((result) => (
+                            <TableRow key={result.series}>
+                              <TableCell align="center">
+                                <Typography fontWeight="700" fontSize="1.1rem">{result.series}</Typography>
+                                {cheapestSeries === result.series && (
+                                  <Chip label="最安" color="primary" size="small" sx={{ ml: 1 }} />
+                                )}
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontSize: '1.1rem' }}>{formatCurrency(result.unitPrice)}</TableCell>
+                              <TableCell align="right" sx={{ fontSize: '1.1rem' }}>{formatCurrency(result.annualElecCost)}</TableCell>
+                              <TableCell align="right" sx={{ fontSize: '1.1rem' }}>{formatCurrency(result.totalElecCost)}</TableCell>
+                              <TableCell align="right">
+                                <Typography fontWeight="700" color="primary.main" fontSize="1.2rem">
+                                  {formatCurrency(result.totalCost)}
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                    {priceDifference && (
+                      <Box sx={{ p: 2, bgcolor: '#f0f9ff', borderTop: '2px solid #e2e8f0' }}>
+                        <Typography variant="h6" color="primary.main" fontWeight="700" textAlign="center">
+                          {years}年間で {priceDifference.cheapest} は {priceDifference.mostExpensive} より{' '}
+                          {formatCurrency(priceDifference.difference)} お得！
+                        </Typography>
+                      </Box>
+                    )}
+                  </Card>
+
+                  {/* グラフ */}
+                  {chartData.length > 0 && (
+                    <Grid container spacing={3}>
+                      <Grid size={{ xs: 12, md: 5 }}>
+                        <Card>
+                          <Box sx={{ p: 2, borderBottom: '2px solid #e2e8f0' }}>
+                            <Typography variant="h5" fontWeight="700">{years}年総費用</Typography>
+                          </Box>
+                          <CardContent>
+                            <Box sx={{ height: 280, width: '100%' }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                  <XAxis dataKey="series" tick={{ fill: '#64748b', fontSize: 14 }} />
+                                  <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}万`} tick={{ fill: '#64748b', fontSize: 14 }} />
+                                  <Bar dataKey="cost" radius={[6, 6, 0, 0]}>
+                                    {chartData.map((entry, index) => (
+                                      <Cell key={`cell-pdf-${index}`} fill={seriesColors[entry.series as Series] || '#94a3b8'} />
+                                    ))}
+                                  </Bar>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 7 }}>
+                        <Card>
+                          <Box sx={{ p: 2, borderBottom: '2px solid #e2e8f0' }}>
+                            <Typography variant="h5" fontWeight="700">使うほど差が開く！年数別総費用</Typography>
+                          </Box>
+                          <CardContent>
+                            <Box sx={{ height: 280, width: '100%' }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={lineChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                  <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 12 }} interval={1} />
+                                  <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}万`} tick={{ fill: '#64748b', fontSize: 14 }} />
+                                  <Legend wrapperStyle={{ paddingTop: 10 }} formatter={(value) => <span style={{ color: '#64748b', fontSize: 14 }}>{value}</span>} />
+                                  {calculationResults.filter(r => r.unitPrice > 0).map((result) => (
+                                    <Line key={`pdf-${result.series}`} type="monotone" dataKey={result.series} stroke={seriesColors[result.series]} strokeWidth={result.series === 'XS' ? 3 : 2} dot={{ r: result.series === 'XS' ? 4 : 3 }} />
+                                  ))}
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </Box>
+                            <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ mt: 1 }}>
+                              省エネ性能の高いXSシリーズは、長く使うほど電気代の差で元が取れます
+                            </Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    </Grid>
+                  )}
+                </Box>
+
+                {/* PDF用ページ2: 機能比較表（画面外に配置、大きな文字） */}
+                <Box
+                  ref={printPage2Ref}
+                  sx={{
+                    position: 'absolute',
+                    left: '-9999px',
+                    top: 0,
+                    width: '800px',
+                    bgcolor: 'white',
+                    p: 4,
+                  }}
+                >
+                  <Box sx={{ mb: 3, pb: 2, borderBottom: '4px solid #2563eb' }}>
+                    {customerName && (
+                      <Typography variant="h4" fontWeight="700" color="text.primary" sx={{ mb: 1 }}>
+                        {customerName} さま
+                      </Typography>
+                    )}
+                    <Typography variant="h3" fontWeight="700" color="primary.main" textAlign="center" sx={{ fontSize: '2.2rem' }}>
+                      2026年モデル シリーズ機能比較
+                    </Typography>
+                    <Typography variant="h6" color="text.secondary" textAlign="center" sx={{ mt: 1 }}>
+                      パナソニック エオリア {selectedTatami}畳用
+                    </Typography>
+                  </Box>
+
+                  <Card>
+                    <TableContainer>
+                      <Table>
+                        <TableHead>
+                          <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                            <TableCell sx={{ fontWeight: 700, fontSize: '1.1rem', minWidth: 180 }}>機能</TableCell>
+                            {availableSeries.map(series => {
+                              const info = seriesFeatures[series];
+                              return (
+                                <TableCell
+                                  key={`pdf-head-${series}`}
+                                  align="center"
+                                  sx={{
+                                    bgcolor: info.highlight ? '#eff6ff' : 'inherit',
+                                    borderLeft: info.highlight ? '3px solid #2563eb' : 'none',
+                                    borderRight: info.highlight ? '3px solid #2563eb' : 'none',
+                                  }}
+                                >
+                                  <Stack spacing={0.5} alignItems="center">
+                                    {info.highlight && <Chip icon={<StarIcon sx={{ fontSize: 16 }} />} label="おすすめ" size="small" color="primary" />}
+                                    <Typography fontWeight="700" fontSize="1.2rem" color={info.color}>{info.name}</Typography>
+                                    <Typography variant="body2" color="text.secondary">{info.grade}</Typography>
+                                  </Stack>
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {/* 消費電力 */}
+                          <TableRow sx={{ bgcolor: '#fefce8' }}>
+                            <TableCell sx={{ fontWeight: 700, fontSize: '1.1rem' }}>消費電力</TableCell>
+                            {availableSeries.map(series => {
+                              const info = seriesFeatures[series];
+                              const specs = acSpecs[selectedTatami] as Record<string, { coolW: number; heatW: number }>;
+                              const spec = specs[series];
+                              return (
+                                <TableCell
+                                  key={`pdf-power-${series}`}
+                                  align="center"
+                                  sx={{
+                                    bgcolor: info.highlight ? '#eff6ff' : 'inherit',
+                                    borderLeft: info.highlight ? '3px solid #2563eb' : 'none',
+                                    borderRight: info.highlight ? '3px solid #2563eb' : 'none',
+                                  }}
+                                >
+                                  <Typography fontSize="1rem">冷房: <strong>{spec.coolW}W</strong></Typography>
+                                  <Typography fontSize="1rem">暖房: <strong>{spec.heatW}W</strong></Typography>
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                          {/* 本体価格 */}
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 700, fontSize: '1.1rem' }}>本体価格</TableCell>
+                            {availableSeries.map(series => {
+                              const info = seriesFeatures[series];
+                              const result = calculationResults.find(r => r.series === series);
+                              return (
+                                <TableCell
+                                  key={`pdf-price-${series}`}
+                                  align="center"
+                                  sx={{
+                                    bgcolor: info.highlight ? '#eff6ff' : 'inherit',
+                                    borderLeft: info.highlight ? '3px solid #2563eb' : 'none',
+                                    borderRight: info.highlight ? '3px solid #2563eb' : 'none',
+                                  }}
+                                >
+                                  <Typography fontWeight="700" fontSize="1.1rem">
+                                    {result && result.unitPrice > 0 ? formatCurrency(result.unitPrice) : '-'}
+                                  </Typography>
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                          {/* 総費用 */}
+                          <TableRow sx={{ bgcolor: '#f0f9ff' }}>
+                            <TableCell sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{years}年総費用</TableCell>
+                            {availableSeries.map(series => {
+                              const info = seriesFeatures[series];
+                              const result = calculationResults.find(r => r.series === series);
+                              return (
+                                <TableCell
+                                  key={`pdf-total-${series}`}
+                                  align="center"
+                                  sx={{
+                                    bgcolor: info.highlight ? '#eff6ff' : 'inherit',
+                                    borderLeft: info.highlight ? '3px solid #2563eb' : 'none',
+                                    borderRight: info.highlight ? '3px solid #2563eb' : 'none',
+                                  }}
+                                >
+                                  {result && result.unitPrice > 0 ? (
+                                    <>
+                                      <Typography fontWeight="700" color="primary.main" fontSize="1.2rem">
+                                        {formatCurrency(result.totalCost)}
+                                      </Typography>
+                                      {cheapestSeries === series && <Chip label="最安" size="small" color="primary" sx={{ mt: 0.5 }} />}
+                                    </>
+                                  ) : '-'}
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                          {/* 機能 */}
+                          {featureLabels.map((feature, idx) => (
+                            <TableRow key={`pdf-feat-${feature}`} sx={{ bgcolor: idx % 2 === 0 ? 'white' : '#fafafa' }}>
+                              <TableCell sx={{ fontWeight: 600, fontSize: '1rem' }}>{feature}</TableCell>
+                              {availableSeries.map(series => {
+                                const info = seriesFeatures[series];
+                                const value = info.features[feature as keyof typeof info.features];
+                                return (
+                                  <TableCell
+                                    key={`pdf-${series}-${feature}`}
+                                    align="center"
+                                    sx={{
+                                      bgcolor: info.highlight ? (idx % 2 === 0 ? '#eff6ff' : '#e0f2fe') : 'inherit',
+                                      borderLeft: info.highlight ? '3px solid #2563eb' : 'none',
+                                      borderRight: info.highlight ? '3px solid #2563eb' : 'none',
+                                    }}
+                                  >
+                                    {typeof value === 'boolean' ? (
+                                      value ? <CheckIcon sx={{ color: '#22c55e', fontSize: 28 }} /> : <CancelIcon sx={{ color: '#d1d5db', fontSize: 28 }} />
+                                    ) : (
+                                      <Typography fontWeight={value !== '-' ? 700 : 400} fontSize="1rem" color={value !== '-' ? 'text.primary' : 'text.disabled'}>
+                                        {value}
+                                      </Typography>
+                                    )}
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+
+                    {/* XS推しメッセージ */}
+                    {availableSeries.includes('XS') && (
+                      <Box sx={{ p: 3, bgcolor: '#eff6ff', borderTop: '2px solid #bfdbfe' }}>
+                        <Stack direction="row" alignItems="flex-start" spacing={2}>
+                          <StarIcon sx={{ color: '#2563eb', fontSize: 32, mt: 0.5 }} />
+                          <Box>
+                            <Typography variant="h6" fontWeight="700" color="primary.main" gutterBottom>
+                              XSシリーズがおすすめの理由
+                            </Typography>
+                            <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.8 }}>
+                              • <strong>省エネ性能No.1</strong> - 消費電力が最も低く、長期間使うほど電気代で差がつきます<br />
+                              • <strong>ナノイーX 48兆</strong> - 最高濃度でカビ・花粉・ウイルス・PM2.5を抑制<br />
+                              • <strong>エネチャージ</strong> - 霜取り運転中も暖房が止まらず快適<br />
+                              • <strong>AI快適おまかせ</strong> - ボタン一つで運転モードと温度を自動最適化<br />
+                              • <strong>耐塩害仕様</strong> - ブルーフィンコーティングで室外機の耐久性向上
+                            </Typography>
+                          </Box>
+                        </Stack>
+                      </Box>
+                    )}
+                  </Card>
+                </Box>
               </>
             )}
 
