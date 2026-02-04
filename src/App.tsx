@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -23,7 +23,8 @@ import {
   CssBaseline,
   Stack,
   FormControl,
-  Chip
+  Chip,
+  Button
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import {
@@ -39,12 +40,16 @@ import {
   Star as StarIcon,
   CompareArrows as CompareIcon,
   CalendarMonth as CalendarIcon,
-  TrendingUp as TrendingUpIcon
+  TrendingUp as TrendingUpIcon,
+  PictureAsPdf as PdfIcon,
+  Image as ImageIcon
 } from '@mui/icons-material';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, TooltipProps,
   LineChart, Line, Legend
 } from 'recharts';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { acSpecs, kWhCostWithTax } from './data/acSpecs';
 
 // 型定義
@@ -225,15 +230,15 @@ const App: React.FC = () => {
       isCheapest: r.series === cheapestSeries
     })), [calculationResults, cheapestSeries]);
 
-  // 年数別総費用推移データ（折れ線グラフ用）
+  // 年数別総費用推移データ（折れ線グラフ用）- 選択した年数まで表示
   const lineChartData = useMemo(() => {
     const validResults = calculationResults.filter(r => r.unitPrice > 0);
     if (validResults.length === 0) return [];
 
-    // 1年目から20年目までのデータを生成
-    return Array.from({ length: 20 }, (_, i) => {
+    // 1年目から選択した年数までのデータを生成
+    return Array.from({ length: years }, (_, i) => {
       const year = i + 1;
-      const dataPoint: Record<string, number | string> = { year: `${year}年` };
+      const dataPoint: Record<string, number | string> = { year: `${year}年`, yearNum: year };
 
       validResults.forEach(result => {
         dataPoint[result.series] = Math.round(result.unitPrice + result.annualElecCost * year);
@@ -241,7 +246,7 @@ const App: React.FC = () => {
 
       return dataPoint;
     });
-  }, [calculationResults]);
+  }, [calculationResults, years]);
 
   const normalizeNumericInput = (value: string) =>
     value
@@ -263,6 +268,48 @@ const App: React.FC = () => {
 
   const formatCurrency = (amount: number) =>
     `¥${new Intl.NumberFormat('ja-JP').format(Math.round(amount))}`;
+
+  // 印刷用エリアの参照
+  const printRef = useRef<HTMLDivElement>(null);
+
+  // JPG出力
+  const handleExportJPG = useCallback(async () => {
+    if (!printRef.current) return;
+    const canvas = await html2canvas(printRef.current, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+    });
+    const link = document.createElement('a');
+    link.download = `エアコン比較_${selectedTatami}畳_${years}年.jpg`;
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+  }, [selectedTatami, years]);
+
+  // PDF出力
+  const handleExportPDF = useCallback(async () => {
+    if (!printRef.current) return;
+    const canvas = await html2canvas(printRef.current, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+    });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = canvas.width;
+    const imgHeight = canvas.height;
+    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+    const imgX = (pdfWidth - imgWidth * ratio) / 2;
+    const imgY = 5;
+    pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+    pdf.save(`エアコン比較_${selectedTatami}畳_${years}年.pdf`);
+  }, [selectedTatami, years]);
 
   // Custom Tooltip for Recharts
   const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
@@ -471,8 +518,40 @@ const App: React.FC = () => {
             {/* 結果表示 */}
             {calculationResults.some(r => r.unitPrice > 0) && (
               <>
+                {/* 出力ボタン */}
+                <Stack direction="row" spacing={2} justifyContent="flex-end">
+                  <Button
+                    variant="outlined"
+                    startIcon={<ImageIcon />}
+                    onClick={handleExportJPG}
+                    size="small"
+                  >
+                    JPGで保存
+                  </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<PdfIcon />}
+                    onClick={handleExportPDF}
+                    size="small"
+                  >
+                    PDFで保存
+                  </Button>
+                </Stack>
+
+                {/* 印刷用エリア */}
+                <Box ref={printRef} sx={{ bgcolor: 'white', p: 2, borderRadius: 2 }}>
+                  {/* ヘッダー（印刷用） */}
+                  <Box sx={{ mb: 2, pb: 1, borderBottom: '2px solid #2563eb' }}>
+                    <Typography variant="h5" fontWeight="700" color="primary.main" textAlign="center">
+                      エアコン {selectedTatami}畳用 シリーズ比較表
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" textAlign="center">
+                      使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100-coolRatio}% / 電気代 ¥{kWhCostWithTax}/kWh
+                    </Typography>
+                  </Box>
+
                 {/* テーブル */}
-                <Card>
+                <Card sx={{ mb: 2 }}>
                   <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
                     <MoneyIcon color="primary" />
                     <Typography variant="h6" fontWeight="600">{years}年総費用比較</Typography>
@@ -848,6 +927,8 @@ const App: React.FC = () => {
                     </Table>
                   </TableContainer>
                 </Card>
+                </Box>
+                {/* 印刷用エリア終了 */}
               </>
             )}
 
