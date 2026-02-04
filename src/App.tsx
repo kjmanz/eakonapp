@@ -38,9 +38,13 @@ import {
   Cancel as CancelIcon,
   Star as StarIcon,
   CompareArrows as CompareIcon,
-  CalendarMonth as CalendarIcon
+  CalendarMonth as CalendarIcon,
+  TrendingUp as TrendingUpIcon
 } from '@mui/icons-material';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, TooltipProps, Legend } from 'recharts';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, TooltipProps,
+  LineChart, Line, Legend
+} from 'recharts';
 import { acSpecs, kWhCostWithTax } from './data/acSpecs';
 
 // 型定義
@@ -61,57 +65,54 @@ const getAvailableSeries = (tatami: TatamiSize): Series[] => {
   return (['XS', 'EX', 'J'] as Series[]).filter(s => s in specs);
 };
 
-// シリーズ機能比較データ (2026年モデル)
+// シリーズ機能比較データ (2026年モデル) - パナソニック公式情報に基づく
 const seriesFeatures = {
   XS: {
     name: 'XSシリーズ',
-    grade: '最上位',
+    grade: 'パナソニックのお店限定',
     color: '#2563eb',
     highlight: true,
     features: {
-      'ナノイーX': '48兆（最高濃度）',
+      'ナノイーX': '48兆',
       'エネチャージ': true,
       'AI快適おまかせ': true,
-      'フィルター自動お掃除': true,
-      '内部クリーン': true,
-      'においケア': true,
-      '快適気流': '4方向',
-      'スマホ連携': true,
-      '音声操作': true,
+      'フィルター自動お掃除': '自動排出',
+      'ナノイーX内部クリーン': true,
+      'エオリアアプリ': true,
+      'おしゃべり機能': true,
+      '耐塩害仕様（ブルーフィン）': true,
     },
   },
   EX: {
     name: 'EXシリーズ',
-    grade: '中位',
+    grade: '奥行コンパクト',
     color: '#64748b',
     highlight: false,
     features: {
-      'ナノイーX': '4.8兆',
+      'ナノイーX': '48兆',
       'エネチャージ': false,
-      'AI快適おまかせ': false,
-      'フィルター自動お掃除': true,
-      '内部クリーン': true,
-      'においケア': false,
-      '快適気流': '2方向',
-      'スマホ連携': true,
-      '音声操作': false,
+      'AI快適おまかせ': 'AI自動モード',
+      'フィルター自動お掃除': '自動排出',
+      'ナノイーX内部クリーン': true,
+      'エオリアアプリ': true,
+      'おしゃべり機能': false,
+      '耐塩害仕様（ブルーフィン）': false,
     },
   },
   J: {
     name: 'Jシリーズ',
-    grade: 'エントリー',
+    grade: 'スタンダード',
     color: '#94a3b8',
     highlight: false,
     features: {
-      'ナノイーX': '-',
+      'ナノイーX': '9.6兆',
       'エネチャージ': false,
       'AI快適おまかせ': false,
       'フィルター自動お掃除': false,
-      '内部クリーン': true,
-      'においケア': false,
-      '快適気流': '-',
-      'スマホ連携': false,
-      '音声操作': false,
+      'ナノイーX内部クリーン': true,
+      'エオリアアプリ': true,
+      'おしゃべり機能': false,
+      '耐塩害仕様（ブルーフィン）': false,
     },
   },
 };
@@ -121,12 +122,18 @@ const featureLabels = [
   'エネチャージ',
   'AI快適おまかせ',
   'フィルター自動お掃除',
-  '内部クリーン',
-  'においケア',
-  '快適気流',
-  'スマホ連携',
-  '音声操作',
+  'ナノイーX内部クリーン',
+  'エオリアアプリ',
+  'おしゃべり機能',
+  '耐塩害仕様（ブルーフィン）',
 ];
+
+// シリーズカラー
+const seriesColors: Record<Series, string> = {
+  XS: '#2563eb',
+  EX: '#f59e0b',
+  J: '#94a3b8',
+};
 
 // テーマ作成 - 落ち着いたカラーパレット
 const theme = createTheme({
@@ -218,16 +225,23 @@ const App: React.FC = () => {
       isCheapest: r.series === cheapestSeries
     })), [calculationResults, cheapestSeries]);
 
-  // 費用内訳グラフデータ（積み上げ棒グラフ用）
-  const stackedChartData = useMemo(() => calculationResults
-    .filter(r => r.unitPrice > 0)
-    .map(r => ({
-      series: r.series,
-      本体価格: r.unitPrice,
-      電気代: Math.round(r.totalElecCost),
-      total: r.totalCost,
-      isCheapest: r.series === cheapestSeries
-    })), [calculationResults, cheapestSeries]);
+  // 年数別総費用推移データ（折れ線グラフ用）
+  const lineChartData = useMemo(() => {
+    const validResults = calculationResults.filter(r => r.unitPrice > 0);
+    if (validResults.length === 0) return [];
+
+    // 1年目から20年目までのデータを生成
+    return Array.from({ length: 20 }, (_, i) => {
+      const year = i + 1;
+      const dataPoint: Record<string, number | string> = { year: `${year}年` };
+
+      validResults.forEach(result => {
+        dataPoint[result.series] = Math.round(result.unitPrice + result.annualElecCost * year);
+      });
+
+      return dataPoint;
+    });
+  }, [calculationResults]);
 
   const normalizeNumericInput = (value: string) =>
     value
@@ -265,31 +279,40 @@ const App: React.FC = () => {
     return null;
   };
 
-  // 積み上げグラフ用Tooltip
-  const StackedTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
+  // 折れ線グラフ用Tooltip
+  const LineChartTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
     if (active && payload && payload.length) {
-      const data = payload[0]?.payload;
       return (
         <Paper sx={{ p: 1.5, minWidth: 160 }}>
-          <Typography variant="subtitle2" fontWeight="bold" gutterBottom>{label}シリーズ</Typography>
+          <Typography variant="subtitle2" fontWeight="bold" gutterBottom>{label}目</Typography>
           <Stack spacing={0.5}>
-            <Typography variant="body2">
-              本体価格: <strong>{formatCurrency(data.本体価格)}</strong>
-            </Typography>
-            <Typography variant="body2">
-              {years}年電気代: <strong>{formatCurrency(data.電気代)}</strong>
-            </Typography>
-            <Box sx={{ borderTop: '1px solid #e2e8f0', pt: 0.5, mt: 0.5 }}>
-              <Typography variant="body2" color="primary" fontWeight="bold">
-                合計: {formatCurrency(data.total)}
+            {payload.map((entry) => (
+              <Typography key={entry.name} variant="body2" sx={{ color: entry.color }}>
+                {entry.name}: <strong>{formatCurrency(entry.value as number)}</strong>
               </Typography>
-            </Box>
+            ))}
           </Stack>
         </Paper>
       );
     }
     return null;
   };
+
+  // 価格差を計算
+  const priceDifference = useMemo(() => {
+    const validResults = calculationResults.filter(r => r.unitPrice > 0);
+    if (validResults.length < 2) return null;
+
+    const sorted = [...validResults].sort((a, b) => a.totalCost - b.totalCost);
+    const cheapest = sorted[0];
+    const mostExpensive = sorted[sorted.length - 1];
+
+    return {
+      cheapest: cheapest.series,
+      mostExpensive: mostExpensive.series,
+      difference: mostExpensive.totalCost - cheapest.totalCost,
+    };
+  }, [calculationResults]);
 
   return (
     <ThemeProvider theme={theme}>
@@ -492,13 +515,21 @@ const App: React.FC = () => {
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  {priceDifference && (
+                    <Box sx={{ p: 2, bgcolor: '#f0f9ff', borderTop: '1px solid #e2e8f0' }}>
+                      <Typography variant="body2" color="primary.main" fontWeight="600" textAlign="center">
+                        {years}年間で {priceDifference.cheapest} は {priceDifference.mostExpensive} より{' '}
+                        <strong>{formatCurrency(priceDifference.difference)}</strong> お得！
+                      </Typography>
+                    </Box>
+                  )}
                 </Card>
 
                 {/* グラフ */}
                 {chartData.length > 0 && (
                   <Grid container spacing={3}>
                     {/* 総費用比較グラフ */}
-                    <Grid size={{ xs: 12, md: 6 }}>
+                    <Grid size={{ xs: 12, md: 5 }}>
                       <Card sx={{ height: '100%' }}>
                         <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
                           <ChartIcon color="primary" />
@@ -519,7 +550,7 @@ const App: React.FC = () => {
                                   {chartData.map((entry, index) => (
                                     <Cell
                                       key={`cell-${index}`}
-                                      fill={entry.isCheapest ? '#2563eb' : '#94a3b8'}
+                                      fill={seriesColors[entry.series as Series] || '#94a3b8'}
                                     />
                                   ))}
                                 </Bar>
@@ -530,36 +561,49 @@ const App: React.FC = () => {
                       </Card>
                     </Grid>
 
-                    {/* 費用内訳グラフ（積み上げ） */}
-                    <Grid size={{ xs: 12, md: 6 }}>
+                    {/* 年数別総費用推移グラフ（折れ線） */}
+                    <Grid size={{ xs: 12, md: 7 }}>
                       <Card sx={{ height: '100%' }}>
                         <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <ChartIcon color="primary" />
-                          <Typography variant="h6" fontWeight="600">費用内訳</Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            （本体価格 + 電気代）
-                          </Typography>
+                          <TrendingUpIcon color="primary" />
+                          <Typography variant="h6" fontWeight="600">使うほど差が開く！年数別総費用</Typography>
                         </Box>
                         <CardContent>
                           <Box sx={{ height: 300, width: '100%' }}>
                             <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={stackedChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                              <LineChart data={lineChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                <XAxis dataKey="series" tick={{ fill: '#64748b', fontSize: 12 }} />
+                                <XAxis
+                                  dataKey="year"
+                                  tick={{ fill: '#64748b', fontSize: 11 }}
+                                  interval={1}
+                                />
                                 <YAxis
                                   tickFormatter={(value) => `${Math.round(value / 10000)}万`}
                                   tick={{ fill: '#64748b', fontSize: 12 }}
                                 />
-                                <Tooltip content={<StackedTooltip />} />
+                                <Tooltip content={<LineChartTooltip />} />
                                 <Legend
                                   wrapperStyle={{ paddingTop: 10 }}
                                   formatter={(value) => <span style={{ color: '#64748b', fontSize: 12 }}>{value}</span>}
                                 />
-                                <Bar dataKey="本体価格" stackId="a" fill="#60a5fa" radius={[0, 0, 0, 0]} />
-                                <Bar dataKey="電気代" stackId="a" fill="#fbbf24" radius={[6, 6, 0, 0]} />
-                              </BarChart>
+                                {calculationResults.filter(r => r.unitPrice > 0).map((result) => (
+                                  <Line
+                                    key={result.series}
+                                    type="monotone"
+                                    dataKey={result.series}
+                                    stroke={seriesColors[result.series]}
+                                    strokeWidth={result.series === 'XS' ? 3 : 2}
+                                    dot={{ r: result.series === 'XS' ? 4 : 3 }}
+                                    activeDot={{ r: 6 }}
+                                  />
+                                ))}
+                              </LineChart>
                             </ResponsiveContainer>
                           </Box>
+                          <Typography variant="caption" color="text.secondary" display="block" textAlign="center" sx={{ mt: 1 }}>
+                            省エネ性能の高いXSシリーズは、長く使うほど電気代の差で元が取れます
+                          </Typography>
                         </CardContent>
                       </Card>
                     </Grid>
@@ -571,12 +615,15 @@ const App: React.FC = () => {
                   <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
                     <CompareIcon color="primary" />
                     <Typography variant="h6" fontWeight="600">2026年モデル シリーズ機能比較</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                      ※パナソニック公式情報に基づく
+                    </Typography>
                   </Box>
                   <TableContainer>
                     <Table size="small">
                       <TableHead>
                         <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                          <TableCell sx={{ fontWeight: 600, minWidth: 140 }}>機能</TableCell>
+                          <TableCell sx={{ fontWeight: 600, minWidth: 160 }}>機能</TableCell>
                           {availableSeries.map(series => {
                             const info = seriesFeatures[series];
                             return (
@@ -603,7 +650,7 @@ const App: React.FC = () => {
                                     {info.name}
                                   </Typography>
                                   <Typography variant="caption" color="text.secondary">
-                                    {info.grade}モデル
+                                    {info.grade}
                                   </Typography>
                                 </Stack>
                               </TableCell>
@@ -785,10 +832,11 @@ const App: React.FC = () => {
                                       XSシリーズがおすすめの理由
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary">
-                                      • <strong>省エネ性能No.1</strong> - 消費電力が最も低く、長期間の電気代を大幅に節約<br />
-                                      • <strong>ナノイーX 48兆</strong> - 最高濃度で花粉・ウイルス・カビ菌を抑制<br />
-                                      • <strong>エネチャージ</strong> - 霜取り運転中も暖房が止まらない快適性<br />
-                                      • <strong>AI快適おまかせ</strong> - 生活パターンを学習し自動で最適運転
+                                      • <strong>省エネ性能No.1</strong> - 消費電力が最も低く、長期間使うほど電気代で差がつきます<br />
+                                      • <strong>ナノイーX 48兆</strong> - 最高濃度でカビ・花粉・ウイルス・PM2.5を抑制<br />
+                                      • <strong>エネチャージ</strong> - 霜取り運転中も暖房が止まらず快適<br />
+                                      • <strong>AI快適おまかせ</strong> - ボタン一つで運転モードと温度を自動最適化<br />
+                                      • <strong>耐塩害仕様</strong> - ブルーフィンコーティングで室外機の耐久性向上
                                     </Typography>
                                   </Box>
                                 </Stack>
