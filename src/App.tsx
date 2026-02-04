@@ -279,6 +279,8 @@ const App: React.FC = () => {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
+      scrollY: -window.scrollY,
+      windowHeight: printRef.current.scrollHeight,
     });
     const link = document.createElement('a');
     link.download = `エアコン比較_${selectedTatami}畳_${years}年.jpg`;
@@ -293,20 +295,25 @@ const App: React.FC = () => {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
+      scrollY: -window.scrollY,
+      windowHeight: printRef.current.scrollHeight,
     });
     const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+    // A4サイズ (210mm x 297mm) でマージンを考慮
+    const margin = 10; // 10mmマージン
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
     });
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const pdfWidth = pdf.internal.pageSize.getWidth() - margin * 2;
+    const pdfHeight = pdf.internal.pageSize.getHeight() - margin * 2;
     const imgWidth = canvas.width;
     const imgHeight = canvas.height;
     const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-    const imgX = (pdfWidth - imgWidth * ratio) / 2;
-    const imgY = 5;
+    const imgX = margin + (pdfWidth - imgWidth * ratio) / 2;
+    const imgY = margin;
     pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
     pdf.save(`エアコン比較_${selectedTatami}畳_${years}年.pdf`);
   }, [selectedTatami, years]);
