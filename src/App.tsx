@@ -24,7 +24,11 @@ import {
   Stack,
   FormControl,
   Chip,
-  Button
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import {
@@ -191,6 +195,11 @@ const App: React.FC = () => {
   const [coolRatio, setCoolRatio] = useState(50);
   const [years, setYears] = useState(10);
 
+  // 出力用State
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [exportType, setExportType] = useState<'jpg' | 'pdf'>('pdf');
+
   // 利用可能シリーズ
   const availableSeries = useMemo(() => getAvailableSeries(selectedTatami), [selectedTatami]);
 
@@ -272,9 +281,20 @@ const App: React.FC = () => {
   // 印刷用エリアの参照
   const printRef = useRef<HTMLDivElement>(null);
 
-  // JPG出力
-  const handleExportJPG = useCallback(async () => {
+  // 出力ダイアログを開く
+  const openExportDialog = useCallback((type: 'jpg' | 'pdf') => {
+    setExportType(type);
+    setExportDialogOpen(true);
+  }, []);
+
+  // 出力実行
+  const handleExport = useCallback(async () => {
     if (!printRef.current) return;
+    setExportDialogOpen(false);
+
+    // 少し待ってからキャプチャ（名前の表示を反映させるため）
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     const canvas = await html2canvas(printRef.current, {
       scale: 2,
       useCORS: true,
@@ -282,41 +302,35 @@ const App: React.FC = () => {
       scrollY: -window.scrollY,
       windowHeight: printRef.current.scrollHeight,
     });
-    const link = document.createElement('a');
-    link.download = `エアコン比較_${selectedTatami}畳_${years}年.jpg`;
-    link.href = canvas.toDataURL('image/jpeg', 0.95);
-    link.click();
-  }, [selectedTatami, years]);
 
-  // PDF出力
-  const handleExportPDF = useCallback(async () => {
-    if (!printRef.current) return;
-    const canvas = await html2canvas(printRef.current, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      scrollY: -window.scrollY,
-      windowHeight: printRef.current.scrollHeight,
-    });
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const fileName = customerName
+      ? `エアコン比較_${customerName}様_${selectedTatami}畳_${years}年`
+      : `エアコン比較_${selectedTatami}畳_${years}年`;
 
-    // A4サイズ (210mm x 297mm) でマージンを考慮
-    const margin = 10; // 10mmマージン
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
-    const pdfWidth = pdf.internal.pageSize.getWidth() - margin * 2;
-    const pdfHeight = pdf.internal.pageSize.getHeight() - margin * 2;
-    const imgWidth = canvas.width;
-    const imgHeight = canvas.height;
-    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-    const imgX = margin + (pdfWidth - imgWidth * ratio) / 2;
-    const imgY = margin;
-    pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
-    pdf.save(`エアコン比較_${selectedTatami}畳_${years}年.pdf`);
-  }, [selectedTatami, years]);
+    if (exportType === 'jpg') {
+      const link = document.createElement('a');
+      link.download = `${fileName}.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
+      link.click();
+    } else {
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const margin = 8;
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+      const pdfWidth = pdf.internal.pageSize.getWidth() - margin * 2;
+      const pdfHeight = pdf.internal.pageSize.getHeight() - margin * 2;
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+      const imgX = margin + (pdfWidth - imgWidth * ratio) / 2;
+      const imgY = margin;
+      pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+      pdf.save(`${fileName}.pdf`);
+    }
+  }, [customerName, exportType, selectedTatami, years]);
 
   // Custom Tooltip for Recharts
   const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
@@ -530,7 +544,7 @@ const App: React.FC = () => {
                   <Button
                     variant="outlined"
                     startIcon={<ImageIcon />}
-                    onClick={handleExportJPG}
+                    onClick={() => openExportDialog('jpg')}
                     size="small"
                   >
                     JPGで保存
@@ -538,7 +552,7 @@ const App: React.FC = () => {
                   <Button
                     variant="contained"
                     startIcon={<PdfIcon />}
-                    onClick={handleExportPDF}
+                    onClick={() => openExportDialog('pdf')}
                     size="small"
                   >
                     PDFで保存
@@ -546,13 +560,21 @@ const App: React.FC = () => {
                 </Stack>
 
                 {/* 印刷用エリア */}
-                <Box ref={printRef} sx={{ bgcolor: 'white', p: 2, borderRadius: 2 }}>
+                <Box ref={printRef} sx={{ bgcolor: 'white', p: 3, borderRadius: 2 }}>
                   {/* ヘッダー（印刷用） */}
-                  <Box sx={{ mb: 2, pb: 1, borderBottom: '2px solid #2563eb' }}>
-                    <Typography variant="h5" fontWeight="700" color="primary.main" textAlign="center">
+                  <Box sx={{ mb: 2, pb: 1, borderBottom: '3px solid #2563eb' }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
+                      {customerName && (
+                        <Typography variant="h5" fontWeight="700" color="text.primary">
+                          {customerName} さま
+                        </Typography>
+                      )}
+                      <Box sx={{ flex: 1 }} />
+                    </Stack>
+                    <Typography variant="h4" fontWeight="700" color="primary.main" textAlign="center" sx={{ fontSize: '1.8rem' }}>
                       エアコン {selectedTatami}畳用 シリーズ比較表
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" textAlign="center">
+                    <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ mt: 1, fontSize: '1rem' }}>
                       使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100-coolRatio}% / 電気代 ¥{kWhCostWithTax}/kWh
                     </Typography>
                   </Box>
@@ -955,6 +977,39 @@ const App: React.FC = () => {
           </Stack>
         </Container>
       </Box>
+
+      {/* 名前入力ダイアログ */}
+      <Dialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>お客様のお名前</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="お名前"
+            placeholder="例: 山田太郎"
+            fullWidth
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            variant="outlined"
+            sx={{ mt: 1 }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            ※ 空欄の場合は名前なしで出力されます
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setExportDialogOpen(false)} color="inherit">
+            キャンセル
+          </Button>
+          <Button
+            onClick={handleExport}
+            variant="contained"
+            startIcon={exportType === 'pdf' ? <PdfIcon /> : <ImageIcon />}
+          >
+            {exportType === 'pdf' ? 'PDFを作成' : 'JPGを作成'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </ThemeProvider>
   );
 };
