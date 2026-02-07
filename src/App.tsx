@@ -154,6 +154,7 @@ const App: React.FC = () => {
   // State管理
   const [selectedTatami, setSelectedTatami] = useState<TatamiSize>(6);
   const [unitPrices, setUnitPrices] = useState({ XS: '', EX: '', J: '' });
+  const [priceFocus, setPriceFocus] = useState<Record<Series, boolean>>({ XS: false, EX: false, J: false });
   const [dailyHours, setDailyHours] = useState(8);
   const [coolRatio, setCoolRatio] = useState(50);
   const [years, setYears] = useState(10);
@@ -193,7 +194,7 @@ const App: React.FC = () => {
     const specs = acSpecs[selectedTatami] as Record<string, { coolW: number; heatW: number }>;
     return availableSeries.map(series => {
       const spec = specs[series];
-      const unitPrice = parseInt(unitPrices[series].replace(/,/g, '')) || 0;
+      const unitPrice = parseInt(unitPrices[series], 10) || 0;
       const annualCost = annualElecYen(spec.coolW, spec.heatW);
       const totalElecCost = annualCost * years;
       const totalCost = unitPrice + totalElecCost;
@@ -244,14 +245,18 @@ const App: React.FC = () => {
   const handlePriceChange = (series: Series, value: string) => {
     const normalizedValue = normalizeNumericInput(value);
     const numericValue = normalizedValue.replace(/[^0-9]/g, '');
+    setUnitPrices(prev => ({ ...prev, [series]: numericValue }));
+  };
 
-    if (numericValue === '') {
-      setUnitPrices(prev => ({ ...prev, [series]: '' }));
-      return;
-    }
+  const handlePriceFocus = (series: Series, focused: boolean) => {
+    setPriceFocus(prev => ({ ...prev, [series]: focused }));
+  };
 
-    const formattedValue = new Intl.NumberFormat('ja-JP').format(parseInt(numericValue));
-    setUnitPrices(prev => ({ ...prev, [series]: formattedValue }));
+  const getDisplayPrice = (series: Series) => {
+    const raw = unitPrices[series];
+    if (!raw) return '';
+    if (priceFocus[series]) return raw;
+    return new Intl.NumberFormat('ja-JP').format(parseInt(raw, 10));
   };
 
   const formatCurrency = (amount: number) =>
@@ -390,12 +395,22 @@ const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+      <Box
+        sx={{
+          minHeight: '100vh',
+          bgcolor: 'background.default',
+          backgroundImage: 'linear-gradient(180deg, #eef4ff 0px, #f8fafc 220px)',
+        }}
+      >
         {/* ヘッダー */}
-        <AppBar position="static" elevation={0} sx={{ bgcolor: 'white', borderBottom: '1px solid #e2e8f0' }}>
+        <AppBar
+          position="static"
+          elevation={0}
+          sx={{ bgcolor: 'rgba(255,255,255,0.9)', borderBottom: '1px solid #dbe7fb', backdropFilter: 'blur(6px)' }}
+        >
           <Toolbar>
             <Container maxWidth="lg" sx={{ display: 'flex', justifyContent: 'center' }}>
-              <Typography variant="h5" component="h1" sx={{ fontWeight: 700, color: 'text.primary' }}>
+              <Typography variant="h5" component="h1" sx={{ fontWeight: 700, color: 'text.primary', letterSpacing: '0.02em' }}>
                 エアコン総費用シミュレーター
               </Typography>
             </Container>
@@ -403,12 +418,17 @@ const App: React.FC = () => {
         </AppBar>
 
         {/* タブナビゲーション */}
-        <Box sx={{ bgcolor: 'white', borderBottom: '1px solid #e2e8f0' }}>
+        <Box sx={{ bgcolor: 'rgba(255,255,255,0.95)', borderBottom: '1px solid #dbe7fb' }}>
           <Container maxWidth="lg">
-            <Tabs value={currentTab} onChange={handleTabChange} centered>
-              <Tab label="💰 シミュレーター" />
-              <Tab label="✅ チェックリスト" />
-              <Tab label="🔄 今のエアコンと比較" />
+            <Tabs
+              value={currentTab}
+              onChange={handleTabChange}
+              variant="fullWidth"
+              sx={{ '& .MuiTabs-indicator': { height: 3 } }}
+            >
+              <Tab icon={<MoneyIcon fontSize="small" />} iconPosition="start" label="シミュレーター" />
+              <Tab icon={<CheckIcon fontSize="small" />} iconPosition="start" label="チェックリスト" />
+              <Tab icon={<CompareIcon fontSize="small" />} iconPosition="start" label="今のエアコンと比較" />
             </Tabs>
           </Container>
         </Box>
@@ -426,130 +446,205 @@ const App: React.FC = () => {
                   </Box>
                   <CardContent sx={{ p: 3 }}>
                     <Grid container spacing={3}>
-                      {/* 畳数選択 */}
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <Stack spacing={1.5}>
-                          <Stack direction="row" alignItems="center" spacing={1}>
-                            <HomeIcon fontSize="small" color="action" />
-                            <Typography variant="subtitle2" color="text.secondary">お部屋の畳数</Typography>
-                          </Stack>
-                          <FormControl fullWidth size="small">
-                            <Select
-                              value={String(selectedTatami)}
-                              onChange={(e) => setSelectedTatami(Number(e.target.value) as TatamiSize)}
-                            >
-                              {Object.keys(acSpecs).map(tatami => (
-                                <MenuItem key={tatami} value={tatami}>{tatami}畳</MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
+                      <Grid size={{ xs: 12, md: 5 }}>
+                        <Stack spacing={2}>
+                          <Card variant="outlined" sx={{ borderColor: '#dbe7fb' }}>
+                            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                              <Stack spacing={1.25}>
+                                <Stack direction="row" alignItems="center" spacing={1}>
+                                  <HomeIcon fontSize="small" color="action" />
+                                  <Typography variant="subtitle1" fontWeight={700}>お部屋の畳数</Typography>
+                                </Stack>
+                                <FormControl fullWidth size="small">
+                                  <Select
+                                    value={String(selectedTatami)}
+                                    onChange={(e) => setSelectedTatami(Number(e.target.value) as TatamiSize)}
+                                  >
+                                    {Object.keys(acSpecs).map(tatami => (
+                                      <MenuItem key={tatami} value={tatami}>{tatami}畳</MenuItem>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                              </Stack>
+                            </CardContent>
+                          </Card>
+
+                          <Card variant="outlined" sx={{ borderColor: '#dbe7fb' }}>
+                            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                              <Stack spacing={1.5}>
+                                <Stack direction="row" alignItems="center" spacing={1}>
+                                  <MoneyIcon fontSize="small" color="action" />
+                                  <Typography variant="subtitle1" fontWeight={700}>本体価格</Typography>
+                                </Stack>
+                                <Typography variant="body2" color="text.secondary">
+                                  数字のみ入力できます。入力中はそのまま、入力後に自動で3桁区切り表示します。
+                                </Typography>
+                                <Stack spacing={1.25}>
+                                  {availableSeries.map(series => (
+                                    <TextField
+                                      key={series}
+                                      label={`${series}シリーズ`}
+                                      value={getDisplayPrice(series)}
+                                      onChange={(e) => handlePriceChange(series, e.target.value)}
+                                      onFocus={() => handlePriceFocus(series, true)}
+                                      onBlur={() => handlePriceFocus(series, false)}
+                                      fullWidth
+                                      size="small"
+                                      placeholder="例: 248000"
+                                      inputProps={{
+                                        inputMode: 'numeric',
+                                        pattern: '[0-9]*',
+                                        'aria-label': `${series}シリーズの本体価格`,
+                                      }}
+                                      InputProps={{
+                                        endAdornment: <InputAdornment position="end">円</InputAdornment>,
+                                      }}
+                                    />
+                                  ))}
+                                </Stack>
+                              </Stack>
+                            </CardContent>
+                          </Card>
                         </Stack>
                       </Grid>
 
-                      {/* 本体価格入力 */}
-                      <Grid size={{ xs: 12, md: 3 }}>
-                        <Stack spacing={1.5}>
-                          <Stack direction="row" alignItems="center" spacing={1}>
-                            <MoneyIcon fontSize="small" color="action" />
-                            <Typography variant="subtitle2" color="text.secondary">本体価格</Typography>
-                          </Stack>
-                          <Stack spacing={1.5}>
-                            {availableSeries.map(series => (
-                              <TextField
-                                key={series}
-                                label={series}
-                                value={unitPrices[series]}
-                                onChange={(e) => handlePriceChange(series, e.target.value)}
-                                fullWidth
-                                size="small"
-                                InputProps={{
-                                  endAdornment: <InputAdornment position="end">円</InputAdornment>,
-                                }}
-                              />
-                            ))}
-                          </Stack>
-                        </Stack>
-                      </Grid>
-
-                      {/* スライダー設定 */}
-                      <Grid size={{ xs: 12, md: 6 }}>
-                        <Grid container spacing={3}>
-                          {/* 比較年数 */}
-                          <Grid size={{ xs: 12, sm: 4 }}>
-                            <Stack spacing={1.5}>
+                      <Grid size={{ xs: 12, md: 7 }}>
+                        <Card variant="outlined" sx={{ borderColor: '#dbe7fb', height: '100%' }}>
+                          <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                            <Stack spacing={2.5}>
                               <Stack direction="row" alignItems="center" spacing={1}>
-                                <CalendarIcon fontSize="small" color="primary" />
-                                <Typography variant="subtitle2" color="primary.main" fontWeight="600">
-                                  比較年数: <strong>{years}年</strong>
+                                <SettingsIcon color="primary" fontSize="small" />
+                                <Typography variant="subtitle1" fontWeight={700} color="primary.main">
+                                  比較条件
                                 </Typography>
                               </Stack>
-                              <Slider
-                                value={years}
-                                onChange={(_, value) => setYears(value as number)}
-                                min={1}
-                                max={20}
-                                step={1}
-                                marks={[
-                                  { value: 1, label: '1年' },
-                                  { value: 10, label: '10年' },
-                                  { value: 20, label: '20年' },
-                                ]}
-                                size="small"
-                                color="primary"
-                              />
-                            </Stack>
-                          </Grid>
 
-                          {/* 運転時間 */}
-                          <Grid size={{ xs: 12, sm: 4 }}>
-                            <Stack spacing={1.5}>
-                              <Stack direction="row" alignItems="center" spacing={1}>
-                                <TimeIcon fontSize="small" color="action" />
-                                <Typography variant="subtitle2" color="text.secondary">
-                                  1日の運転時間: <strong>{dailyHours}時間</strong>
-                                </Typography>
-                              </Stack>
-                              <Slider
-                                value={dailyHours}
-                                onChange={(_, value) => setDailyHours(value as number)}
-                                min={1}
-                                max={24}
-                                step={1}
-                                marks={[
-                                  { value: 1, label: '1h' },
-                                  { value: 12, label: '12h' },
-                                  { value: 24, label: '24h' },
-                                ]}
-                                size="small"
-                              />
-                            </Stack>
-                          </Grid>
+                              <Card variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
+                                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                                  <Stack spacing={1.25}>
+                                    <Stack direction="row" alignItems="center" spacing={1}>
+                                      <CalendarIcon fontSize="small" color="primary" />
+                                      <Typography variant="subtitle2" color="primary.main" fontWeight="700">
+                                        比較年数: {years}年
+                                      </Typography>
+                                    </Stack>
+                                    <Box sx={{ width: '100%', maxWidth: 440, mx: 'auto' }}>
+                                      <Slider
+                                        value={years}
+                                        onChange={(_, value) => setYears(value as number)}
+                                        min={1}
+                                        max={20}
+                                        step={1}
+                                        marks={[
+                                          { value: 1, label: '1年' },
+                                          { value: 10, label: '10年' },
+                                          { value: 20, label: '20年' },
+                                        ]}
+                                        valueLabelDisplay="on"
+                                        color="primary"
+                                      />
+                                    </Box>
+                                    <Stack direction="row" spacing={1} justifyContent="center" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                                      {[5, 10, 15].map((value) => (
+                                        <Chip
+                                          key={value}
+                                          label={`${value}年`}
+                                          size="small"
+                                          clickable
+                                          color={years === value ? 'primary' : 'default'}
+                                          variant={years === value ? 'filled' : 'outlined'}
+                                          onClick={() => setYears(value)}
+                                        />
+                                      ))}
+                                    </Stack>
+                                  </Stack>
+                                </CardContent>
+                              </Card>
 
-                          {/* 冷房比率 */}
-                          <Grid size={{ xs: 12, sm: 4 }}>
-                            <Stack spacing={1.5}>
-                              <Stack direction="row" alignItems="center" spacing={1}>
-                                <ThermostatIcon fontSize="small" color="action" />
-                                <Typography variant="subtitle2" color="text.secondary">
-                                  冷房 <strong>{coolRatio}%</strong> / 暖房 <strong>{100 - coolRatio}%</strong>
-                                </Typography>
-                              </Stack>
-                              <Slider
-                                value={coolRatio}
-                                onChange={(_, value) => setCoolRatio(value as number)}
-                                min={0}
-                                max={100}
-                                step={10}
-                                marks={[
-                                  { value: 0, label: '暖房' },
-                                  { value: 50, label: '半々' },
-                                  { value: 100, label: '冷房' },
-                                ]}
-                                size="small"
-                              />
+                              <Card variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
+                                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                                  <Stack spacing={1.25}>
+                                    <Stack direction="row" alignItems="center" spacing={1}>
+                                      <TimeIcon fontSize="small" color="action" />
+                                      <Typography variant="subtitle2" color="text.secondary" fontWeight="700">
+                                        1日の運転時間: {dailyHours}時間
+                                      </Typography>
+                                    </Stack>
+                                    <Box sx={{ width: '100%', maxWidth: 440, mx: 'auto' }}>
+                                      <Slider
+                                        value={dailyHours}
+                                        onChange={(_, value) => setDailyHours(value as number)}
+                                        min={1}
+                                        max={24}
+                                        step={1}
+                                        marks={[
+                                          { value: 1, label: '1h' },
+                                          { value: 8, label: '8h' },
+                                          { value: 24, label: '24h' },
+                                        ]}
+                                        valueLabelDisplay="on"
+                                      />
+                                    </Box>
+                                    <Stack direction="row" spacing={1} justifyContent="center" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                                      {[4, 8, 12, 24].map((value) => (
+                                        <Chip
+                                          key={value}
+                                          label={`${value}h`}
+                                          size="small"
+                                          clickable
+                                          color={dailyHours === value ? 'primary' : 'default'}
+                                          variant={dailyHours === value ? 'filled' : 'outlined'}
+                                          onClick={() => setDailyHours(value)}
+                                        />
+                                      ))}
+                                    </Stack>
+                                  </Stack>
+                                </CardContent>
+                              </Card>
+
+                              <Card variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
+                                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                                  <Stack spacing={1.25}>
+                                    <Stack direction="row" alignItems="center" spacing={1}>
+                                      <ThermostatIcon fontSize="small" color="action" />
+                                      <Typography variant="subtitle2" color="text.secondary" fontWeight="700">
+                                        冷房 {coolRatio}% / 暖房 {100 - coolRatio}%
+                                      </Typography>
+                                    </Stack>
+                                    <Box sx={{ width: '100%', maxWidth: 440, mx: 'auto' }}>
+                                      <Slider
+                                        value={coolRatio}
+                                        onChange={(_, value) => setCoolRatio(value as number)}
+                                        min={0}
+                                        max={100}
+                                        step={5}
+                                        marks={[
+                                          { value: 0, label: '暖房' },
+                                          { value: 50, label: '半々' },
+                                          { value: 100, label: '冷房' },
+                                        ]}
+                                        valueLabelDisplay="on"
+                                      />
+                                    </Box>
+                                    <Stack direction="row" spacing={1} justifyContent="center" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                                      {[20, 50, 80].map((value) => (
+                                        <Chip
+                                          key={value}
+                                          label={`冷房${value}%`}
+                                          size="small"
+                                          clickable
+                                          color={coolRatio === value ? 'primary' : 'default'}
+                                          variant={coolRatio === value ? 'filled' : 'outlined'}
+                                          onClick={() => setCoolRatio(value)}
+                                        />
+                                      ))}
+                                    </Stack>
+                                  </Stack>
+                                </CardContent>
+                              </Card>
                             </Stack>
-                          </Grid>
-                        </Grid>
+                          </CardContent>
+                        </Card>
                       </Grid>
                     </Grid>
                   </CardContent>
@@ -559,12 +654,12 @@ const App: React.FC = () => {
                 {calculationResults.some(r => r.unitPrice > 0) && (
                   <>
                     {/* 出力ボタン */}
-                    <Stack direction="row" spacing={2} justifyContent="flex-end">
+                    <Stack direction="row" spacing={1.5} justifyContent="flex-end" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
                       <Button
                         variant="outlined"
                         startIcon={<ImageIcon />}
                         onClick={() => openExportDialog('jpg')}
-                        size="small"
+                        size="medium"
                       >
                         JPGで保存
                       </Button>
@@ -572,7 +667,7 @@ const App: React.FC = () => {
                         variant="contained"
                         startIcon={<PdfIcon />}
                         onClick={() => openExportDialog('pdf')}
-                        size="small"
+                        size="medium"
                       >
                         PDFで保存
                       </Button>
@@ -1300,15 +1395,15 @@ const App: React.FC = () => {
                 )}
 
                 {/* 計算式説明 */}
-                <Paper elevation={0} sx={{ p: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#f8fafc', border: '1px solid #dbe7fb', borderRadius: 2 }}>
                   <Stack direction="row" alignItems="center" justifyContent="center" spacing={1} mb={0.5}>
                     <InfoIcon fontSize="small" color="action" />
-                    <Typography variant="caption" color="text.secondary" fontWeight="600">計算式</Typography>
+                    <Typography variant="body2" color="text.secondary" fontWeight="700">計算式</Typography>
                   </Stack>
-                  <Typography variant="caption" color="text.secondary" display="block" textAlign="center">
+                  <Typography variant="body2" color="text.secondary" display="block" textAlign="center">
                     年間電気代 = (冷房W × {coolRatio}% + 暖房W × {100 - coolRatio}%) × {dailyHours}h/日 × 365日 × ¥{kWhCostWithTax}/kWh
                   </Typography>
-                  <Typography variant="caption" color="text.secondary" display="block" textAlign="center">
+                  <Typography variant="body2" color="text.secondary" display="block" textAlign="center">
                     {years}年総費用 = 本体価格 + (年間電気代 × {years}年)
                   </Typography>
                 </Paper>

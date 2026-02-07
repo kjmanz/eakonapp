@@ -35,30 +35,49 @@ interface OldACComparisonProps {
   selectedTatami?: number;
 }
 
-// 古いエアコンのCOPデータ（年式別の目安）
-const oldACData: Record<string, { cop: number; powerCool: number; powerHeat: number; description: string }> = {
-  '2024': { cop: 6.5, powerCool: 500, powerHeat: 480, description: '最新モデル' },
-  '2023': { cop: 6.2, powerCool: 520, powerHeat: 500, description: '1年前' },
-  '2022': { cop: 5.8, powerCool: 550, powerHeat: 530, description: '2年前' },
-  '2021': { cop: 5.5, powerCool: 580, powerHeat: 560, description: '3年前' },
-  '2020': { cop: 5.2, powerCool: 620, powerHeat: 600, description: '4年前' },
-  '2019': { cop: 4.8, powerCool: 660, powerHeat: 640, description: '5年前' },
-  '2018': { cop: 4.5, powerCool: 700, powerHeat: 680, description: '6年前' },
-  '2017': { cop: 4.2, powerCool: 750, powerHeat: 730, description: '7年前' },
-  '2016': { cop: 3.9, powerCool: 800, powerHeat: 780, description: '8年前' },
-  '2015': { cop: 3.6, powerCool: 850, powerHeat: 830, description: '9年前' },
-  '2014': { cop: 3.3, powerCool: 900, powerHeat: 880, description: '10年前' },
-  '2013': { cop: 3.0, powerCool: 950, powerHeat: 930, description: '11年前' },
-  '2012': { cop: 2.8, powerCool: 1000, powerHeat: 980, description: '12年前' },
-  '2011': { cop: 2.6, powerCool: 1050, powerHeat: 1030, description: '13年前' },
-  '2010': { cop: 2.4, powerCool: 1100, powerHeat: 1080, description: '14年前' },
-  '2009': { cop: 2.2, powerCool: 1150, powerHeat: 1130, description: '15年前' },
-  '2008': { cop: 2.0, powerCool: 1200, powerHeat: 1180, description: '16年前' },
-  '2007': { cop: 1.8, powerCool: 1250, powerHeat: 1230, description: '17年前' },
-  '2006': { cop: 1.6, powerCool: 1300, powerHeat: 1280, description: '18年前' },
-  '2005': { cop: 1.4, powerCool: 1350, powerHeat: 1330, description: '19年前' },
-  '2004': { cop: 1.2, powerCool: 1400, powerHeat: 1380, description: '20年前' },
+type SeriesSpec = { coolW: number; heatW: number };
+type TatamiSpecs = Partial<Record<Series, SeriesSpec>>;
+
+interface OldACYearProfile {
+  efficiencyFactor: number;
+  description: string;
+}
+
+const oldCopReference = 5.2;
+
+const getYearDescription = (age: number): string => {
+  if (age <= 4) return '比較的新しい';
+  if (age <= 8) return '省エネ性能が落ち始める時期';
+  if (age <= 12) return '省エネ性能に差が出る時期';
+  if (age <= 16) return '交換検討ゾーン';
+  return '高消費電力ゾーン';
 };
+
+// 年式が古いほど消費電力が増える傾向を、緩やかな二次式で近似
+const estimateEfficiencyFactor = (age: number): number => {
+  const clampedAge = Math.max(0, Math.min(age, 25));
+  return Number((1 + clampedAge * 0.02 + clampedAge * clampedAge * 0.001).toFixed(3));
+};
+
+const buildOldACYearProfiles = (): Record<string, OldACYearProfile> => {
+  const currentYear = new Date().getFullYear();
+  const latestYear = currentYear - 2;
+  const oldestYear = latestYear - 20;
+  const profiles: Record<string, OldACYearProfile> = {};
+
+  for (let year = latestYear; year >= oldestYear; year -= 1) {
+    const age = currentYear - year;
+    profiles[String(year)] = {
+      efficiencyFactor: estimateEfficiencyFactor(age),
+      description: `${age}年前 / ${getYearDescription(age)}`,
+    };
+  }
+
+  return profiles;
+};
+
+const oldACYearProfiles = buildOldACYearProfiles();
+const purchaseYearOptions = Object.keys(oldACYearProfiles).sort((a, b) => Number(b) - Number(a));
 
 // 新しいエアコンの機能データ（2026年モデル）
 const seriesFeatures: Record<Series, { cop: number; nanoeX: string; autoCleaning: boolean }> = {
@@ -68,8 +87,9 @@ const seriesFeatures: Record<Series, { cop: number; nanoeX: string; autoCleaning
 };
 
 export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami: _selectedTatami }) => {
-  const [manufacturer, setManufacturer] = useState<'panasonic' | 'daikin' | 'mitsubishi' | 'sharp' | 'other'>('panasonic');
-  const [purchaseYear, setPurchaseYear] = useState<string>('2018');
+  const [purchaseYear, setPurchaseYear] = useState<string>(() =>
+    oldACYearProfiles['2018'] ? '2018' : (purchaseYearOptions[0] ?? ''),
+  );
   const [selectedTatami, setSelectedTatami] = useState<number>(8);
   const [newSeries, setNewSeries] = useState<Series>('XS');
   const [dailyHours, setDailyHours] = useState(8);
@@ -82,7 +102,7 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami
   // 畳数変更時に選択中のシリーズが存在しない場合はXSに切り替え
   const handleTatamiChange = (tatami: number) => {
     setSelectedTatami(tatami);
-    const specs = acSpecs[tatami as keyof typeof acSpecs] as any;
+    const specs = acSpecs[tatami as keyof typeof acSpecs] as TatamiSpecs;
     if (specs && !specs[newSeries]) {
       // 選択中のシリーズが存在しない場合はXSに切り替え
       setNewSeries('XS');
@@ -90,13 +110,23 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami
   };
 
   const calculateComparison = useMemo(() => {
-    if (!compared || !purchaseYear || !oldACData[purchaseYear]) return null;
+    if (!compared || !purchaseYear || !oldACYearProfiles[purchaseYear]) return null;
 
-    const tatamiSpecs = acSpecs[selectedTatami as keyof typeof acSpecs] as any;
+    const tatamiSpecs = acSpecs[selectedTatami as keyof typeof acSpecs] as TatamiSpecs;
     if (!tatamiSpecs || !tatamiSpecs[newSeries]) return null;
 
-    const oldAC = oldACData[purchaseYear];
-    const newACSpecs = tatamiSpecs[newSeries];
+    const oldYearProfile = oldACYearProfiles[purchaseYear];
+    const oldReferenceSpecs = tatamiSpecs.J ?? tatamiSpecs.EX ?? tatamiSpecs.XS;
+    if (!oldReferenceSpecs) return null;
+
+    const oldAC = {
+      cop: Number(Math.max(2.6, oldCopReference / oldYearProfile.efficiencyFactor).toFixed(1)),
+      powerCool: Math.round(oldReferenceSpecs.coolW * oldYearProfile.efficiencyFactor),
+      powerHeat: Math.round(oldReferenceSpecs.heatW * oldYearProfile.efficiencyFactor),
+      description: oldYearProfile.description,
+    };
+
+    const newACSpecs = tatamiSpecs[newSeries] as SeriesSpec;
     const features = seriesFeatures[newSeries];
 
     // 新しいエアコンのデータを統合
@@ -206,24 +236,7 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami
               <CardContent sx={{ p: 3 }}>
 
                 <Grid container spacing={3}>
-                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                    <FormControl fullWidth size="small">
-                      <InputLabel>メーカー</InputLabel>
-                      <Select
-                        value={manufacturer}
-                        label="メーカー"
-                        onChange={(e) => setManufacturer(e.target.value as any)}
-                      >
-                        <MenuItem value="panasonic">パナソニック</MenuItem>
-                        <MenuItem value="daikin">ダイキン</MenuItem>
-                        <MenuItem value="mitsubishi">三菱電機</MenuItem>
-                        <MenuItem value="sharp">シャープ</MenuItem>
-                        <MenuItem value="other">その他</MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Grid>
-
-                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                  <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                     <FormControl fullWidth size="small">
                       <InputLabel>購入年</InputLabel>
                       <Select
@@ -231,16 +244,19 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami
                         label="購入年"
                         onChange={(e) => setPurchaseYear(e.target.value)}
                       >
-                        {Object.entries(oldACData).map(([year, data]) => (
-                          <MenuItem key={year} value={year}>
-                            {year}年（{data.description}）
-                          </MenuItem>
-                        ))}
+                        {purchaseYearOptions.map((year) => {
+                          const data = oldACYearProfiles[year];
+                          return (
+                            <MenuItem key={year} value={year}>
+                              {year}年（{data.description}）
+                            </MenuItem>
+                          );
+                        })}
                       </Select>
                     </FormControl>
                   </Grid>
 
-                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                  <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                     <FormControl fullWidth size="small">
                       <InputLabel>畳数</InputLabel>
                       <Select
@@ -257,7 +273,7 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami
                     </FormControl>
                   </Grid>
 
-                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                  <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                     <FormControl fullWidth size="small">
                       <InputLabel>比較する新エアコン</InputLabel>
                       <Select
@@ -266,11 +282,11 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami
                         onChange={(e) => setNewSeries(e.target.value as Series)}
                       >
                         <MenuItem value="XS">XSシリーズ（最上位）</MenuItem>
-                        <MenuItem value="EX" disabled={!(acSpecs[selectedTatami as keyof typeof acSpecs] as any)?.EX}>
-                          EXシリーズ（中堅）{!(acSpecs[selectedTatami as keyof typeof acSpecs] as any)?.EX && '（この畳数は非対応）'}
+                        <MenuItem value="EX" disabled={!(acSpecs[selectedTatami as keyof typeof acSpecs] as TatamiSpecs)?.EX}>
+                          EXシリーズ（中堅）{!(acSpecs[selectedTatami as keyof typeof acSpecs] as TatamiSpecs)?.EX && '（この畳数は非対応）'}
                         </MenuItem>
-                        <MenuItem value="J" disabled={!(acSpecs[selectedTatami as keyof typeof acSpecs] as any)?.J}>
-                          Jシリーズ（標準）{!(acSpecs[selectedTatami as keyof typeof acSpecs] as any)?.J && '（この畳数は非対応）'}
+                        <MenuItem value="J" disabled={!(acSpecs[selectedTatami as keyof typeof acSpecs] as TatamiSpecs)?.J}>
+                          Jシリーズ（標準）{!(acSpecs[selectedTatami as keyof typeof acSpecs] as TatamiSpecs)?.J && '（この畳数は非対応）'}
                         </MenuItem>
                       </Select>
                     </FormControl>
@@ -282,56 +298,100 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami
                   <Typography variant="body2" color="text.secondary">
                     選択中の条件: <strong>{selectedTatami}畳 / {newSeries}シリーズ</strong>
                   </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                    購入年の消費電力は、同畳数の現行標準機種を基準に年式係数を掛けた推定値です。
+                  </Typography>
                 </Box>
 
-                {/* 1日の運転時間スライダー */}
-                <Box sx={{ mt: 3 }}>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                    <TimeIcon fontSize="small" color="action" />
-                    <Typography variant="subtitle2" color="text.secondary">
-                      1日の運転時間: <strong>{dailyHours}時間</strong>
-                    </Typography>
-                  </Stack>
-                  <Slider
-                    value={dailyHours}
-                    onChange={(_, value) => setDailyHours(value as number)}
-                    min={1}
-                    max={24}
-                    step={1}
-                    marks={[
-                      { value: 1, label: '1h' },
-                      { value: 8, label: '8h' },
-                      { value: 12, label: '12h' },
-                      { value: 24, label: '24h' },
-                    ]}
-                    valueLabelDisplay="auto"
-                    valueLabelFormat={(value) => `${value}時間`}
-                  />
-                </Box>
+                <Grid container spacing={2} sx={{ mt: 3 }}>
+                  {/* 1日の運転時間スライダー */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Card variant="outlined" sx={{ p: 2, borderColor: '#e2e8f0', height: '100%' }}>
+                      <Stack spacing={1.25}>
+                        <Stack direction="row" alignItems="center" spacing={1}>
+                          <TimeIcon fontSize="small" color="action" />
+                          <Typography variant="subtitle2" color="text.secondary">
+                            1日の運転時間: <strong>{dailyHours}時間</strong>
+                          </Typography>
+                        </Stack>
+                        <Box sx={{ width: '100%', maxWidth: 400, mx: 'auto' }}>
+                          <Slider
+                            size="small"
+                            value={dailyHours}
+                            onChange={(_, value) => setDailyHours(value as number)}
+                            min={1}
+                            max={24}
+                            step={1}
+                            marks={[
+                              { value: 1, label: '1h' },
+                              { value: 8, label: '8h' },
+                              { value: 24, label: '24h' },
+                            ]}
+                            valueLabelDisplay="on"
+                            valueLabelFormat={(value) => `${value}時間`}
+                          />
+                        </Box>
+                        <Stack direction="row" spacing={1} justifyContent="center" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                          {[4, 8, 12, 24].map((hour) => (
+                            <Chip
+                              key={hour}
+                              label={`${hour}h`}
+                              size="small"
+                              clickable
+                              color={dailyHours === hour ? 'primary' : 'default'}
+                              variant={dailyHours === hour ? 'filled' : 'outlined'}
+                              onClick={() => setDailyHours(hour)}
+                            />
+                          ))}
+                        </Stack>
+                      </Stack>
+                    </Card>
+                  </Grid>
 
-                {/* 冷房比率スライダー */}
-                <Box sx={{ mt: 3 }}>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                    <ThermostatIcon fontSize="small" color="action" />
-                    <Typography variant="subtitle2" color="text.secondary">
-                      冷房 <strong>{coolRatio}%</strong> / 暖房 <strong>{100 - coolRatio}%</strong>
-                    </Typography>
-                  </Stack>
-                  <Slider
-                    value={coolRatio}
-                    onChange={(_, value) => setCoolRatio(value as number)}
-                    min={0}
-                    max={100}
-                    step={10}
-                    marks={[
-                      { value: 0, label: '暖房のみ' },
-                      { value: 50, label: '50%' },
-                      { value: 100, label: '冷房のみ' },
-                    ]}
-                    valueLabelDisplay="auto"
-                    valueLabelFormat={(value) => `${value}%`}
-                  />
-                </Box>
+                  {/* 冷房比率スライダー */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Card variant="outlined" sx={{ p: 2, borderColor: '#e2e8f0', height: '100%' }}>
+                      <Stack spacing={1.25}>
+                        <Stack direction="row" alignItems="center" spacing={1}>
+                          <ThermostatIcon fontSize="small" color="action" />
+                          <Typography variant="subtitle2" color="text.secondary">
+                            冷房 <strong>{coolRatio}%</strong> / 暖房 <strong>{100 - coolRatio}%</strong>
+                          </Typography>
+                        </Stack>
+                        <Box sx={{ width: '100%', maxWidth: 400, mx: 'auto' }}>
+                          <Slider
+                            size="small"
+                            value={coolRatio}
+                            onChange={(_, value) => setCoolRatio(value as number)}
+                            min={0}
+                            max={100}
+                            step={5}
+                            marks={[
+                              { value: 0, label: '暖房' },
+                              { value: 50, label: '半々' },
+                              { value: 100, label: '冷房' },
+                            ]}
+                            valueLabelDisplay="on"
+                            valueLabelFormat={(value) => `${value}%`}
+                          />
+                        </Box>
+                        <Stack direction="row" spacing={1} justifyContent="center" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                          {[20, 50, 80].map((ratio) => (
+                            <Chip
+                              key={ratio}
+                              label={`冷房${ratio}%`}
+                              size="small"
+                              clickable
+                              color={coolRatio === ratio ? 'primary' : 'default'}
+                              variant={coolRatio === ratio ? 'filled' : 'outlined'}
+                              onClick={() => setCoolRatio(ratio)}
+                            />
+                          ))}
+                        </Stack>
+                      </Stack>
+                    </Card>
+                  </Grid>
+                </Grid>
 
                 <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
                   <Button
@@ -371,7 +431,12 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami
                       <TableBody>
                         <TableRow>
                           <TableCell>年式</TableCell>
-                          <TableCell align="center">{purchaseYear}年製</TableCell>
+                          <TableCell align="center">
+                            {purchaseYear}年製
+                            <Typography component="span" variant="caption" color="text.secondary">
+                              {' '}（{calculateComparison.oldAC.description}）
+                            </Typography>
+                          </TableCell>
                           <TableCell align="center" sx={{ bgcolor: getSeriesBgColor(newSeries) }}>2026年製</TableCell>
                           <TableCell align="center">-</TableCell>
                         </TableRow>
