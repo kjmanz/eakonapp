@@ -28,7 +28,9 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Tabs,
+  Tab
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import {
@@ -55,10 +57,12 @@ import {
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { acSpecs, kWhCostWithTax } from './data/acSpecs';
+import { Checklist } from './components/Checklist';
+import { OldACComparison } from './components/OldACComparison';
 
 // 型定義
 type TatamiSize = keyof typeof acSpecs;
-type Series = 'XS' | 'EX' | 'J';
+export type Series = 'XS' | 'EX' | 'J';
 
 interface CalculationResult {
   series: Series;
@@ -199,6 +203,22 @@ const App: React.FC = () => {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [exportType, setExportType] = useState<'jpg' | 'pdf'>('pdf');
+
+  // タブState
+  const [currentTab, setCurrentTab] = useState(0);
+  const [recommendedSeries, setRecommendedSeries] = useState<Series | null>(null);
+
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    setCurrentTab(newValue);
+  };
+
+  // チェックリストからおすすめシリーズが変更されたとき、そのシリーズにフォーカス
+  React.useEffect(() => {
+    if (recommendedSeries && currentTab === 0) {
+      // シミュレータータブに戻ったとき、おすすめシリーズを強調表示など
+      console.log('Recommended series:', recommendedSeries);
+    }
+  }, [recommendedSeries, currentTab]);
 
   // 利用可能シリーズ
   const availableSeries = useMemo(() => getAvailableSeries(selectedTatami), [selectedTatami]);
@@ -423,8 +443,22 @@ const App: React.FC = () => {
           </Toolbar>
         </AppBar>
 
+        {/* タブナビゲーション */}
+        <Box sx={{ bgcolor: 'white', borderBottom: '1px solid #e2e8f0' }}>
+          <Container maxWidth="lg">
+            <Tabs value={currentTab} onChange={handleTabChange} centered>
+              <Tab label="💰 シミュレーター" />
+              <Tab label="✅ チェックリスト" />
+              <Tab label="🔄 今のエアコンと比較" />
+            </Tabs>
+          </Container>
+        </Box>
+
         <Container maxWidth="lg" sx={{ py: 4 }}>
-          <Stack spacing={3}>
+          {/* Tab Panel 0: シミュレーター */}
+          {currentTab === 0 && (
+            <>
+            <Stack spacing={3}>
             {/* 設定パネル */}
             <Card>
               <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1320,6 +1354,18 @@ const App: React.FC = () => {
               </Typography>
             </Paper>
           </Stack>
+            </>
+          )}
+
+          {/* Tab Panel 1: チェックリスト */}
+          {currentTab === 1 && (
+            <Checklist onRecommendedSeriesChange={setRecommendedSeries} />
+          )}
+
+          {/* Tab Panel 2: 今のエアコン比較 */}
+          {currentTab === 2 && (
+            <OldACComparison selectedTatami={selectedTatami} />
+          )}
         </Container>
       </Box>
 
