@@ -9,6 +9,7 @@ import {
   Radio,
   FormControlLabel,
   Chip,
+  Grid,
 } from '@mui/material';
 import {
   CheckCircle as CheckIcon,
@@ -248,61 +249,74 @@ export const Checklist: React.FC<ChecklistProps> = ({ onRecommendedSeriesChange 
             お客様のライフスタイルに合わせて、最適なエアコンが見つかります
           </Typography>
 
-          <Stack spacing={3}>
+          <Grid container spacing={2}>
             {checklistItems.map((item) => (
-              <Card
-                key={item.id}
-                elevation={0}
-                sx={{
-                  border: '1px solid #e2e8f0',
-                  bgcolor: answers[item.id] ? '#f0f9ff' : 'white',
-                }}
-              >
-                <CardContent sx={{ p: 2 }}>
-                  <Stack spacing={2}>
-                    <Stack direction="row" alignItems="center" spacing={1}>
-                      {item.icon}
-                      <Typography fontWeight="600">{item.question}</Typography>
-                      {answers[item.id] && (
-                        <Chip label="回答済み" size="small" color="success" />
+              <Grid size={{ xs: 12, md: 6 }} key={item.id}>
+                <Card
+                  elevation={0}
+                  sx={{
+                    border: '1px solid',
+                    borderColor: answers[item.id] ? 'primary.main' : 'divider',
+                    bgcolor: answers[item.id] ? '#f0f9ff' : 'white',
+                    height: '100%',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      borderColor: 'primary.main',
+                      bgcolor: '#f8fafc',
+                    }
+                  }}
+                >
+                  <CardContent sx={{ p: 2 }}>
+                    <Stack spacing={2}>
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <Box sx={{ color: answers[item.id] ? 'primary.main' : 'action.active' }}>
+                          {item.icon}
+                        </Box>
+                        <Typography fontWeight="600">{item.question}</Typography>
+                        {answers[item.id] && (
+                          <Chip label="OK" size="small" color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />
+                        )}
+                      </Stack>
+
+                      <RadioGroup
+                        value={answers[item.id] || ''}
+                        onChange={(e) => handleAnswerChange(item.id, e.target.value)}
+                      >
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                          {item.options.map((option) => (
+                            <FormControlLabel
+                              key={option.value}
+                              value={option.value}
+                              control={<Radio size="small" />}
+                              label={<Typography variant="body2">{option.label}</Typography>}
+                              sx={{ mr: 2 }}
+                            />
+                          ))}
+                        </Stack>
+                      </RadioGroup>
+
+                      {answers[item.id] && item.type === 'radio' && (
+                        <Box sx={{ p: 1.5, bgcolor: 'background.default', borderRadius: 1 }}>
+                          <Typography variant="caption" color="text.secondary">
+                            {item.id === 'years' && '長期的な視点なら省エネ性能が重要です'}
+                            {item.id === 'seaside' && '耐塩害仕様（ブルーフィン）が必須です！'}
+                            {item.id === 'pet' && 'ペットの留守番中も快適に！エネチャージで暖房が止まらない'}
+                            {item.id === 'baby_or_elderly' && '温度ムラ最小化・ナノイーXで空気清浄が重要です'}
+                            {item.id === 'allergy' && 'ナノイーX 48兆がアレルゲンを抑制！'}
+                            {item.id === 'electricity_cost' && '省エネ性能が高い機種ほど長期的にお得'}
+                            {item.id === 'cleaning' && '自動掃除・自動排出機能で解決！'}
+                            {item.id === 'noise' && 'XSシリーズは最低19dB（図書館より静か）'}
+                            {item.id === 'current_ac_age' && '製造から10年経過で修理費用が高騰します'}
+                            {item.id === 'smartphone' && 'エオリアアプリ対応で外出先から操作可能'}
+                          </Typography>
+                        </Box>
                       )}
                     </Stack>
-
-                  <RadioGroup
-                    value={answers[item.id] || ''}
-                    onChange={(e) => handleAnswerChange(item.id, e.target.value)}
-                  >
-                    <Stack direction="row" spacing={2} flexWrap="wrap">
-                      {item.options.map((option) => (
-                        <FormControlLabel
-                          key={option.value}
-                          value={option.value}
-                          control={<Radio size="small" />}
-                          label={option.label}
-                        />
-                      ))}
-                    </Stack>
-                  </RadioGroup>
-
-                  {answers[item.id] && item.type === 'radio' && (
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
-                      {item.id === 'years' && '長期的な視点なら省エネ性能が重要です'}
-                      {item.id === 'seaside' && '耐塩害仕様（ブルーフィン）が必須です！'}
-                      {item.id === 'pet' && 'ペットの留守番中も快適に！エネチャージで暖房が止まらない'}
-                      {item.id === 'baby_or_elderly' && '温度ムラ最小化・ナノイーXで空気清浄が重要です'}
-                      {item.id === 'allergy' && 'ナノイーX 48兆がアレルゲンを抑制！'}
-                      {item.id === 'electricity_cost' && '省エネ性能が高い機種ほど長期的にお得'}
-                      {item.id === 'cleaning' && '自動掃除・自動排出機能で解決！'}
-                      {item.id === 'noise' && 'XSシリーズは最低19dB（図書館より静か）'}
-                      {item.id === 'current_ac_age' && '製造から10年経過で修理費用が高騰します'}
-                      {item.id === 'smartphone' && 'エオリアアプリ対応で外出先から操作可能'}
-                    </Typography>
-                  )}
-                </Stack>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </Grid>
             ))}
-          </Stack>
+          </Grid>
 
           {allAnswered && recommendation && (
             <Card
@@ -317,48 +331,48 @@ export const Checklist: React.FC<ChecklistProps> = ({ onRecommendedSeriesChange 
                 <Stack spacing={2}>
                   <Typography variant="h6" fontWeight="700" color="primary.main" textAlign="center">
                     📊 チェック結果に基づくおすすめ
-                </Typography>
+                  </Typography>
 
-                <Box
-                  sx={{
-                    p: 3,
-                    bgcolor: 'white',
-                    borderRadius: 2,
-                    border: `3px solid ${seriesColors[recommendation.series]}`,
-                  }}
-                >
-                  <Stack spacing={2} alignItems="center">
-                    <Typography variant="h5" fontWeight="700" color={seriesColors[recommendation.series]}>
-                      ✨ {seriesNames[recommendation.series]} ✨
-                    </Typography>
-
-                    <Typography variant="body2" color="text.secondary" textAlign="center">
-                      お客様の状況に最適なシリーズです
-                    </Typography>
-
-                    {getReasonsForSeries(recommendation.series).length > 0 && (
-                      <Box sx={{ width: '100%', mt: 2 }}>
-                        <Typography variant="subtitle2" fontWeight="600" gutterBottom>
-                          おすすめ理由:
-                        </Typography>
-                        <Stack spacing={1}>
-                          {getReasonsForSeries(recommendation.series).map((reason, idx) => (
-                            <Typography key={idx} variant="body2" color="text.secondary">
-                              • {reason}
-                            </Typography>
-                          ))}
-                        </Stack>
-                      </Box>
-                    )}
-
-                    <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, width: '100%' }}>
-                      <Typography variant="body2" color="text.secondary" textAlign="center">
-                        💡 この結果を「シミュレーター」タブで詳細に確認できます
+                  <Box
+                    sx={{
+                      p: 3,
+                      bgcolor: 'white',
+                      borderRadius: 2,
+                      border: `3px solid ${seriesColors[recommendation.series]}`,
+                    }}
+                  >
+                    <Stack spacing={2} alignItems="center">
+                      <Typography variant="h5" fontWeight="700" color={seriesColors[recommendation.series]}>
+                        ✨ {seriesNames[recommendation.series]} ✨
                       </Typography>
-                    </Box>
-                  </Stack>
-                </Box>
-              </Stack>
+
+                      <Typography variant="body2" color="text.secondary" textAlign="center">
+                        お客様の状況に最適なシリーズです
+                      </Typography>
+
+                      {getReasonsForSeries(recommendation.series).length > 0 && (
+                        <Box sx={{ width: '100%', mt: 2 }}>
+                          <Typography variant="subtitle2" fontWeight="600" gutterBottom>
+                            おすすめ理由:
+                          </Typography>
+                          <Stack spacing={1}>
+                            {getReasonsForSeries(recommendation.series).map((reason, idx) => (
+                              <Typography key={idx} variant="body2" color="text.secondary">
+                                • {reason}
+                              </Typography>
+                            ))}
+                          </Stack>
+                        </Box>
+                      )}
+
+                      <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, width: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" textAlign="center">
+                          💡 この結果を「シミュレーター」タブで詳細に確認できます
+                        </Typography>
+                      </Box>
+                    </Stack>
+                  </Box>
+                </Stack>
               </CardContent>
             </Card>
           )}
