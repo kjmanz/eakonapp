@@ -23,7 +23,6 @@ import {
 import {
   CompareArrows as CompareIcon,
   TrendingUp as TrendingUpIcon,
-  Bolt as BoltIcon,
   CalendarMonth as CalendarIcon,
 } from '@mui/icons-material';
 import { acSpecs } from '../data/acSpecs';
@@ -271,7 +270,6 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
               <Card variant="outlined" sx={{ p: 1.5, bgcolor: '#f8fafc', borderColor: '#e2e8f0' }}>
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                   <Chip icon={<CalendarIcon />} label={`比較期間 ${years}年`} size="small" />
-                  <Chip icon={<BoltIcon />} label={`電気代単価 ${kWhCost}円/kWh`} size="small" />
                   <Chip label={`${selectedTatami}畳`} size="small" />
                   <Chip label={`1日${dailyHours}時間`} size="small" />
                   <Chip label={`冷房${coolRatio}% / 暖房${100 - coolRatio}%`} size="small" />

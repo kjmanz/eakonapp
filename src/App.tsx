@@ -153,9 +153,9 @@ const App: React.FC = () => {
   const [selectedTatami, setSelectedTatami] = useState<TatamiSize>(6);
   const [unitPrices, setUnitPrices] = useState({ XS: '', EX: '', J: '' });
   const [priceFocus, setPriceFocus] = useState<Record<Series, boolean>>({ XS: false, EX: false, J: false });
-  const [installCosts, setInstallCosts] = useState({ XS: '', EX: '', J: '' });
-  const [installFocus, setInstallFocus] = useState<Record<Series, boolean>>({ XS: false, EX: false, J: false });
-  const [kWhCost, setKWhCost] = useState(kWhCostWithTax);
+  const [installCost, setInstallCost] = useState('');
+  const [installFocus, setInstallFocus] = useState(false);
+  const kWhCost = kWhCostWithTax;
   const [dailyHours, setDailyHours] = useState(8);
   const [coolRatio, setCoolRatio] = useState(50);
   const [years, setYears] = useState(10);
@@ -179,16 +179,16 @@ const App: React.FC = () => {
       weightedKWh(coolW, heatW) * dailyHours * 365 * kWhCost;
 
     const specs = acSpecs[selectedTatami] as Record<string, { coolW: number; heatW: number }>;
+    const parsedInstallCost = parseInt(installCost, 10) || 0;
     return availableSeries.map(series => {
       const spec = specs[series];
       const unitPrice = parseInt(unitPrices[series], 10) || 0;
-      const installCost = parseInt(installCosts[series], 10) || 0;
       const annualCost = annualElecYen(spec.coolW, spec.heatW);
       const totalElecCost = annualCost * years;
-      const totalCost = unitPrice + installCost + totalElecCost;
-      return { series, unitPrice, installCost, annualElecCost: annualCost, totalElecCost, totalCost };
+      const totalCost = unitPrice + parsedInstallCost + totalElecCost;
+      return { series, unitPrice, installCost: parsedInstallCost, annualElecCost: annualCost, totalElecCost, totalCost };
     });
-  }, [selectedTatami, unitPrices, installCosts, coolRatio, dailyHours, availableSeries, years, kWhCost]);
+  }, [selectedTatami, unitPrices, installCost, coolRatio, dailyHours, availableSeries, years, kWhCost]);
 
   const cheapestSeries = useMemo(() => {
     const validResults = calculationResults.filter(r => r.unitPrice > 0);
@@ -240,14 +240,14 @@ const App: React.FC = () => {
     setPriceFocus(prev => ({ ...prev, [series]: focused }));
   };
 
-  const handleInstallCostChange = (series: Series, value: string) => {
+  const handleInstallCostChange = (value: string) => {
     const normalizedValue = normalizeNumericInput(value);
     const numericValue = normalizedValue.replace(/[^0-9]/g, '');
-    setInstallCosts(prev => ({ ...prev, [series]: numericValue }));
+    setInstallCost(numericValue);
   };
 
-  const handleInstallFocus = (series: Series, focused: boolean) => {
-    setInstallFocus(prev => ({ ...prev, [series]: focused }));
+  const handleInstallFocus = (focused: boolean) => {
+    setInstallFocus(focused);
   };
 
   const getDisplayPrice = (series: Series) => {
@@ -257,10 +257,10 @@ const App: React.FC = () => {
     return new Intl.NumberFormat('ja-JP').format(parseInt(raw, 10));
   };
 
-  const getDisplayInstallCost = (series: Series) => {
-    const raw = installCosts[series];
+  const getDisplayInstallCost = () => {
+    const raw = installCost;
     if (!raw) return '';
-    if (installFocus[series]) return raw;
+    if (installFocus) return raw;
     return new Intl.NumberFormat('ja-JP').format(parseInt(raw, 10));
   };
 
@@ -500,31 +500,26 @@ const App: React.FC = () => {
                                   <Typography variant="subtitle1" fontWeight={700}>標準工事費</Typography>
                                 </Stack>
                                 <Typography variant="body2" color="text.secondary">
-                                  本体価格と別で計上します。未入力は0円扱いです。
+                                  全シリーズ共通の標準工事費です。未入力は0円扱いです。
                                 </Typography>
-                                <Stack spacing={1.25}>
-                                  {availableSeries.map(series => (
-                                    <TextField
-                                      key={`${series}-install`}
-                                      label={`${series}シリーズ`}
-                                      value={getDisplayInstallCost(series)}
-                                      onChange={(e) => handleInstallCostChange(series, e.target.value)}
-                                      onFocus={() => handleInstallFocus(series, true)}
-                                      onBlur={() => handleInstallFocus(series, false)}
-                                      fullWidth
-                                      size="small"
-                                      placeholder="例: 22000"
-                                      inputProps={{
-                                        inputMode: 'numeric',
-                                        pattern: '[0-9]*',
-                                        'aria-label': `${series}シリーズの標準工事費`,
-                                      }}
-                                      InputProps={{
-                                        endAdornment: <InputAdornment position="end">円</InputAdornment>,
-                                      }}
-                                    />
-                                  ))}
-                                </Stack>
+                                <TextField
+                                  label="標準工事費"
+                                  value={getDisplayInstallCost()}
+                                  onChange={(e) => handleInstallCostChange(e.target.value)}
+                                  onFocus={() => handleInstallFocus(true)}
+                                  onBlur={() => handleInstallFocus(false)}
+                                  fullWidth
+                                  size="small"
+                                  placeholder="例: 22000"
+                                  inputProps={{
+                                    inputMode: 'numeric',
+                                    pattern: '[0-9]*',
+                                    'aria-label': '標準工事費',
+                                  }}
+                                  InputProps={{
+                                    endAdornment: <InputAdornment position="end">円</InputAdornment>,
+                                  }}
+                                />
                               </Stack>
                             </CardContent>
                           </Card>
@@ -546,44 +541,12 @@ const App: React.FC = () => {
                                 <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                                   <Stack spacing={1.25}>
                                     <Stack direction="row" alignItems="center" spacing={1}>
-                                      <MoneyIcon fontSize="small" color="action" />
-                                      <Typography variant="subtitle2" color="text.secondary" fontWeight="700">
-                                        電気料金単価: {kWhCost}円/kWh
-                                      </Typography>
-                                    </Stack>
-                                    <TextField
-                                      fullWidth
-                                      size="small"
-                                      value={kWhCost}
-                                      onChange={(e) => {
-                                        const normalized = normalizeNumericInput(e.target.value);
-                                        const numeric = Number(normalized.replace(/[^0-9.]/g, ''));
-                                        if (!Number.isNaN(numeric) && numeric > 0) {
-                                          setKWhCost(Number(numeric.toFixed(2)));
-                                        }
-                                      }}
-                                      inputProps={{
-                                        inputMode: 'decimal',
-                                        'aria-label': '電気料金単価',
-                                      }}
-                                      InputProps={{
-                                        endAdornment: <InputAdornment position="end">円/kWh</InputAdornment>,
-                                      }}
-                                    />
-                                  </Stack>
-                                </CardContent>
-                              </Card>
-
-                              <Card variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
-                                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                                  <Stack spacing={1.25}>
-                                    <Stack direction="row" alignItems="center" spacing={1}>
                                       <CalendarIcon fontSize="small" color="primary" />
                                       <Typography variant="subtitle2" color="primary.main" fontWeight="700">
                                         比較年数: {years}年
                                       </Typography>
                                     </Stack>
-                                    <Box sx={{ width: '100%', maxWidth: 440, mx: 'auto' }}>
+                                    <Box sx={{ width: '100%', px: 1 }}>
                                       <Slider
                                         value={years}
                                         onChange={(_, value) => setYears(value as number)}
@@ -625,7 +588,7 @@ const App: React.FC = () => {
                                         1日の運転時間: {dailyHours}時間
                                       </Typography>
                                     </Stack>
-                                    <Box sx={{ width: '100%', maxWidth: 440, mx: 'auto' }}>
+                                    <Box sx={{ width: '100%', px: 1 }}>
                                       <Slider
                                         value={dailyHours}
                                         onChange={(_, value) => setDailyHours(value as number)}
@@ -666,7 +629,7 @@ const App: React.FC = () => {
                                         冷房 {coolRatio}% / 暖房 {100 - coolRatio}%
                                       </Typography>
                                     </Stack>
-                                    <Box sx={{ width: '100%', maxWidth: 440, mx: 'auto' }}>
+                                    <Box sx={{ width: '100%', px: 1 }}>
                                       <Slider
                                         value={coolRatio}
                                         onChange={(_, value) => setCoolRatio(value as number)}
@@ -744,7 +707,7 @@ const App: React.FC = () => {
                           エアコン {selectedTatami}畳用 シリーズ比較表
                         </Typography>
                         <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 0.5 }}>
-                          使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100 - coolRatio}% / 電気代 ¥{kWhCost}/kWh
+                          使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100 - coolRatio}%
                         </Typography>
                       </Box>
 
@@ -1181,7 +1144,7 @@ const App: React.FC = () => {
                           エアコン {selectedTatami}畳用 シリーズ比較表
                         </Typography>
                         <Typography variant="h6" color="text.secondary" textAlign="center" sx={{ mt: 1 }}>
-                          使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100 - coolRatio}% / 電気代 ¥{kWhCost}/kWh
+                          使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100 - coolRatio}%
                         </Typography>
                       </Box>
 
@@ -1512,7 +1475,7 @@ const App: React.FC = () => {
                     <Typography variant="body2" color="text.secondary" fontWeight="700">計算式</Typography>
                   </Stack>
                   <Typography variant="body2" color="text.secondary" display="block" textAlign="center">
-                    年間電気代 = (冷房W × {coolRatio}% + 暖房W × {100 - coolRatio}%) × {dailyHours}h/日 × 365日 × ¥{kWhCost}/kWh
+                    年間電気代 = (冷房W × {coolRatio}% + 暖房W × {100 - coolRatio}%) × {dailyHours}h/日 × 365日 × 電気料金単価
                   </Typography>
                   <Typography variant="body2" color="text.secondary" display="block" textAlign="center">
                     {years}年総費用 = 本体価格 + 工事費 + (年間電気代 × {years}年)
