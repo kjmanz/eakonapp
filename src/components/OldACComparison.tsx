@@ -1,29 +1,27 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Alert,
+  Box,
   Card,
   CardContent,
-  Typography,
-  Box,
-  Stack,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
   Chip,
+  FormControl,
+  Grid,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Grid,
-  Alert,
-  Divider,
+  Typography,
 } from '@mui/material';
 import {
-  CompareArrows as CompareIcon,
-  TrendingUp as TrendingUpIcon,
   CalendarMonth as CalendarIcon,
+  CompareArrows as CompareIcon,
 } from '@mui/icons-material';
 import { acSpecs } from '../data/acSpecs';
 import type { Series } from '../types';
@@ -54,13 +52,12 @@ interface OldACYearProfile {
   description: string;
 }
 
-const oldCopReference = 5.2;
 const SERIES_ORDER: Series[] = ['XS', 'EX', 'J'];
 
-const seriesMeta: Record<Series, { label: string; short: string; color: string; bg: string }> = {
-  XS: { label: 'XSシリーズ（おすすめ）', short: 'XS', color: '#2563eb', bg: '#eff6ff' },
-  EX: { label: 'EXシリーズ（バランス）', short: 'EX', color: '#d97706', bg: '#fffbeb' },
-  J: { label: 'Jシリーズ（初期費用重視）', short: 'J', color: '#64748b', bg: '#f1f5f9' },
+const seriesMeta: Record<Series, { label: string; color: string; bg: string }> = {
+  XS: { label: 'XS（高機能）', color: '#2563eb', bg: '#eff6ff' },
+  EX: { label: 'EX（バランス）', color: '#d97706', bg: '#fffbeb' },
+  J: { label: 'J（初期費用重視）', color: '#64748b', bg: '#f1f5f9' },
 };
 
 const getYearDescription = (age: number): string => {
@@ -100,9 +97,9 @@ const formatCurrency = (amount: number) =>
   `¥${new Intl.NumberFormat('ja-JP').format(Math.round(amount))}`;
 
 const formatYears = (value: number | null) => {
-  if (value === null) return '回収不可';
-  if (value <= 0) return '即回収';
-  if (value > 99) return '99年以上';
+  if (value === null) return '目安なし';
+  if (value <= 0) return 'すぐ';
+  if (value > 99) return 'かなり長期';
   return `${value.toFixed(1)}年`;
 };
 
@@ -128,10 +125,7 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
     [planResults],
   );
 
-  const validPlans = useMemo(
-    () => sortedPlans.filter((plan) => plan.unitPrice > 0),
-    [sortedPlans],
-  );
+  const validPlans = useMemo(() => sortedPlans.filter((plan) => plan.unitPrice > 0), [sortedPlans]);
 
   const oldACEstimate = useMemo(() => {
     const yearProfile = oldACYearProfiles[purchaseYear];
@@ -149,9 +143,6 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
 
     return {
       description: yearProfile.description,
-      cop: Number(Math.max(2.6, oldCopReference / yearProfile.efficiencyFactor).toFixed(1)),
-      powerCool: oldPowerCool,
-      powerHeat: oldPowerHeat,
       annualCost: weightedKWh * dailyHours * 365 * kWhCost,
     };
   }, [purchaseYear, tatamiSpecs, coolRatio, dailyHours, kWhCost]);
@@ -161,52 +152,27 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
 
     return validPlans.map((plan) => {
       const initialCost = plan.unitPrice + plan.installCost;
-      const annualSavingsVsOld = oldACEstimate.annualCost - plan.annualElecCost;
-      const monthlySavingsVsOld = annualSavingsVsOld / 12;
-      const paybackYears = annualSavingsVsOld > 0 ? initialCost / annualSavingsVsOld : null;
+      const monthlyElecCost = plan.annualElecCost / 12;
+      const monthlySavingsVsOld = oldACEstimate.annualCost / 12 - monthlyElecCost;
+      const totalDiffVsOld = oldACEstimate.annualCost * years - plan.totalCost;
+      const paybackVsOld = monthlySavingsVsOld > 0 ? initialCost / (monthlySavingsVsOld * 12) : null;
 
       return {
         ...plan,
         initialCost,
-        monthlyElecCost: plan.annualElecCost / 12,
-        annualSavingsVsOld,
+        monthlyElecCost,
         monthlySavingsVsOld,
-        paybackYears,
+        totalDiffVsOld,
+        paybackVsOld,
       };
     });
-  }, [validPlans, oldACEstimate]);
+  }, [validPlans, oldACEstimate, years]);
 
   const cheapestForYears = useMemo(() => {
     if (proposalRows.length === 0) return null;
     return proposalRows.reduce((min, current) =>
       current.totalCost < min.totalCost ? current : min,
     );
-  }, [proposalRows]);
-
-  const xsPaybackVsOther = useMemo(() => {
-    const xs = proposalRows.find((row) => row.series === 'XS');
-    if (!xs) return [];
-
-    return proposalRows
-      .filter((row) => row.series !== 'XS')
-      .map((row) => {
-        const initialDiff = xs.initialCost - row.initialCost;
-        const annualDiff = row.annualElecCost - xs.annualElecCost;
-
-        let payback: number | null = null;
-        if (initialDiff <= 0) {
-          payback = 0;
-        } else if (annualDiff > 0) {
-          payback = initialDiff / annualDiff;
-        }
-
-        return {
-          baseSeries: row.series,
-          initialDiff,
-          annualDiff,
-          payback,
-        };
-      });
   }, [proposalRows]);
 
   const recommendationSeries = useMemo(() => {
@@ -217,31 +183,51 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
     const acAge = currentYear - Number(purchaseYear);
 
     if (xs) {
-      const recoversWithinPeriod = xsPaybackVsOther.some(
-        (item) => item.payback !== null && item.payback <= years,
-      );
-      if (acAge >= 8 || recoversWithinPeriod) return 'XS' as Series;
+      const xsIsRecoverable = xs.paybackVsOld !== null && xs.paybackVsOld <= years;
+      if (acAge >= 8 || xsIsRecoverable) return 'XS' as Series;
     }
 
     return cheapestForYears?.series ?? proposalRows[0].series;
-  }, [proposalRows, purchaseYear, years, xsPaybackVsOther, cheapestForYears]);
+  }, [proposalRows, purchaseYear, years, cheapestForYears]);
 
   const recommendationNote = useMemo(() => {
     if (!recommendationSeries) return '';
     if (recommendationSeries === 'XS') {
-      return '長期運用で回収しやすく、機能・快適性も高いのでXS推奨です。';
+      return '長く使うほど電気代差が出やすく、機能面も充実しているのでおすすめです。';
     }
     if (recommendationSeries === 'EX') {
-      return '初期費用とランニングコストのバランス重視ならEXが有利です。';
+      return '初期費用と月々のバランスがよく、無理なく選びやすいプランです。';
     }
-    return '初期費用最小で進めるならJが現実的です。';
+    return 'まず費用を抑えて導入したい場合に選びやすいプランです。';
   }, [recommendationSeries]);
+
+  const xsVsExMessage = useMemo(() => {
+    const xs = proposalRows.find((row) => row.series === 'XS');
+    const ex = proposalRows.find((row) => row.series === 'EX');
+    if (!xs || !ex) return '';
+
+    const initialDiff = xs.initialCost - ex.initialCost;
+    const monthlyDiff = xs.monthlyElecCost - ex.monthlyElecCost;
+
+    if (initialDiff <= 0) {
+      return 'XSは初期費用でも不利になりにくい条件です。';
+    }
+
+    if (monthlyDiff < 0) {
+      const payback = initialDiff / (Math.abs(monthlyDiff) * 12);
+      return `XSはEXより初期費用が${formatCurrency(initialDiff)}高いですが、月々${formatCurrency(
+        Math.abs(monthlyDiff),
+      )}安く、約${formatYears(payback)}で差額回収の目安です。`;
+    }
+
+    return 'XSは機能重視で選びやすく、快適性を優先したい方に向いています。';
+  }, [proposalRows]);
 
   return (
     <Card>
       <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
         <CompareIcon color="primary" />
-        <Typography variant="h6" fontWeight="700">商談セット提案（現行比較 + 3プラン）</Typography>
+        <Typography variant="h6" fontWeight="700">おすすめプラン比較</Typography>
       </Box>
       <CardContent sx={{ p: 3 }}>
         <Stack spacing={2.5}>
@@ -281,12 +267,12 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
           {oldACEstimate && (
             <Card variant="outlined" sx={{ borderColor: '#dbe7fb', bgcolor: '#f8fbff' }}>
               <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
-                  <Chip label={`現在推定年間電気代 ${formatCurrency(oldACEstimate.annualCost)}`} color="warning" />
-                  <Chip label={`推定COP ${oldACEstimate.cop}`} />
-                  <Chip label={`冷房 ${oldACEstimate.powerCool}W / 暖房 ${oldACEstimate.powerHeat}W`} />
+                <Stack spacing={0.5}>
                   <Typography variant="body2" color="text.secondary">
-                    {purchaseYear}年製（{oldACEstimate.description}）
+                    今のエアコン（{purchaseYear}年製）の電気代目安
+                  </Typography>
+                  <Typography variant="h6" fontWeight="700" color="primary.main">
+                    年間 {formatCurrency(oldACEstimate.annualCost)} / 月あたり {formatCurrency(oldACEstimate.annualCost / 12)}
                   </Typography>
                 </Stack>
               </CardContent>
@@ -294,7 +280,7 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
           )}
 
           {proposalRows.length === 0 && (
-            <Alert severity="info">本体価格を1つ以上入力すると、現行機との比較提案を表示します。</Alert>
+            <Alert severity="info">本体価格を入力すると、わかりやすい比較結果が表示されます。</Alert>
           )}
 
           {proposalRows.length > 0 && oldACEstimate && (
@@ -303,18 +289,21 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
                 <Table size="small">
                   <TableHead>
                     <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                      <TableCell sx={{ fontWeight: 700 }}>提案プラン</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>初期費用</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>月額電気代</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>年間削減（対現行）</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>投資回収</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>{years}年総費用</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>プラン</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>最初にかかる費用</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>毎月の電気代目安</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>{years}年合計</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>今の機種との差</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {proposalRows.map((row) => {
                       const isRecommended = recommendationSeries === row.series;
                       const isCheapest = cheapestForYears?.series === row.series;
+                      const diffLabel = row.totalDiffVsOld >= 0
+                        ? `${formatCurrency(row.totalDiffVsOld)} お得`
+                        : `${formatCurrency(Math.abs(row.totalDiffVsOld))} 高い`;
+
                       return (
                         <TableRow key={row.series} sx={{ bgcolor: isRecommended ? seriesMeta[row.series].bg : 'inherit' }}>
                           <TableCell>
@@ -322,32 +311,21 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
                               <Typography fontWeight={700} sx={{ color: seriesMeta[row.series].color }}>
                                 {seriesMeta[row.series].label}
                               </Typography>
-                              {isRecommended && <Chip label="商談おすすめ" color="primary" size="small" />}
+                              {isRecommended && <Chip label="おすすめ" color="primary" size="small" />}
                               {isCheapest && <Chip label="最安" size="small" />}
                             </Stack>
                           </TableCell>
                           <TableCell align="right">
-                            <Stack spacing={0.2} alignItems="flex-end">
-                              <Typography fontWeight={700}>{formatCurrency(row.initialCost)}</Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                本体{formatCurrency(row.unitPrice)} + 工事{formatCurrency(row.installCost)}
-                              </Typography>
-                            </Stack>
+                            <Typography fontWeight={700}>{formatCurrency(row.initialCost)}</Typography>
                           </TableCell>
                           <TableCell align="right">{formatCurrency(row.monthlyElecCost)}</TableCell>
                           <TableCell align="right">
-                            <Stack spacing={0.2} alignItems="flex-end">
-                              <Typography color={row.annualSavingsVsOld > 0 ? 'success.main' : 'text.secondary'} fontWeight={700}>
-                                {formatCurrency(row.annualSavingsVsOld)}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                月あたり {formatCurrency(row.monthlySavingsVsOld)}
-                              </Typography>
-                            </Stack>
-                          </TableCell>
-                          <TableCell align="right">{formatYears(row.paybackYears)}</TableCell>
-                          <TableCell align="right">
                             <Typography fontWeight={700}>{formatCurrency(row.totalCost)}</Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography color={row.totalDiffVsOld >= 0 ? 'success.main' : 'text.secondary'} fontWeight={700}>
+                              {diffLabel}
+                            </Typography>
                           </TableCell>
                         </TableRow>
                       );
@@ -358,44 +336,16 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
 
               <Card variant="outlined" sx={{ borderColor: '#bfdbfe', bgcolor: '#eff6ff' }}>
                 <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                  <Stack spacing={1.5}>
-                    <Stack direction="row" alignItems="center" spacing={1}>
-                      <TrendingUpIcon color="primary" fontSize="small" />
-                      <Typography fontWeight={700} color="primary.main">XS差額回収シミュレーション</Typography>
-                    </Stack>
-
-                    {xsPaybackVsOther.length === 0 && (
+                  <Stack spacing={1}>
+                    <Typography fontWeight={700} color="primary.main">おすすめ理由</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {recommendationNote}
+                    </Typography>
+                    {xsVsExMessage && (
                       <Typography variant="body2" color="text.secondary">
-                        XSと比較できるプランがありません。
+                        {xsVsExMessage}
                       </Typography>
                     )}
-
-                    {xsPaybackVsOther.map((item) => (
-                      <Box
-                        key={item.baseSeries}
-                        sx={{ p: 1.5, borderRadius: 1.5, bgcolor: 'white', border: '1px solid #dbeafe' }}
-                      >
-                        <Stack direction="row" justifyContent="space-between" spacing={1} useFlexGap flexWrap="wrap">
-                          <Typography variant="body2" fontWeight={700}>
-                            XS vs {seriesMeta[item.baseSeries].short}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            初期差額 {formatCurrency(item.initialDiff)} / 年間電気代差 {formatCurrency(item.annualDiff)}
-                          </Typography>
-                          <Chip
-                            size="small"
-                            color={item.payback !== null && item.payback <= years ? 'success' : 'default'}
-                            label={`回収: ${formatYears(item.payback)}`}
-                          />
-                        </Stack>
-                      </Box>
-                    ))}
-
-                    <Divider />
-
-                    <Typography variant="body2" color="text.secondary">
-                      <strong>{recommendationSeries ? seriesMeta[recommendationSeries].short : '-'}</strong> 推奨: {recommendationNote}
-                    </Typography>
                   </Stack>
                 </CardContent>
               </Card>
@@ -403,8 +353,8 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
               {Number(purchaseYear) <= 2014 && (
                 <Alert severity={Number(purchaseYear) <= 2009 ? 'error' : 'warning'}>
                   {Number(purchaseYear) <= 2009
-                    ? '15年以上経過のため故障リスクと電気代負担が高い状態です。交換優先で提案するのが安全です。'
-                    : '10年以上経過で修理費が上がりやすい時期です。電気代削減と故障リスク低減をセットで提案できます。'}
+                    ? '15年以上経過しているため、故障リスクと電気代負担が大きい状態です。早めの交換がおすすめです。'
+                    : '10年以上経過しているため、修理費と電気代を考えると交換メリットが出やすい時期です。'}
                 </Alert>
               )}
             </>
