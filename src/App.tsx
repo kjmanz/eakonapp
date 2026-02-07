@@ -64,6 +64,7 @@ export type Series = 'XS' | 'EX' | 'J';
 interface CalculationResult {
   series: Series;
   unitPrice: number;
+  installCost: number;
   annualElecCost: number;
   totalElecCost: number;
   totalCost: number;
@@ -152,6 +153,9 @@ const App: React.FC = () => {
   const [selectedTatami, setSelectedTatami] = useState<TatamiSize>(6);
   const [unitPrices, setUnitPrices] = useState({ XS: '', EX: '', J: '' });
   const [priceFocus, setPriceFocus] = useState<Record<Series, boolean>>({ XS: false, EX: false, J: false });
+  const [installCosts, setInstallCosts] = useState({ XS: '', EX: '', J: '' });
+  const [installFocus, setInstallFocus] = useState<Record<Series, boolean>>({ XS: false, EX: false, J: false });
+  const [kWhCost, setKWhCost] = useState(kWhCostWithTax);
   const [dailyHours, setDailyHours] = useState(8);
   const [coolRatio, setCoolRatio] = useState(50);
   const [years, setYears] = useState(10);
@@ -172,18 +176,19 @@ const App: React.FC = () => {
     const weightedKWh = (coolW: number, heatW: number) =>
       toKWh(coolW) * (coolRatio / 100) + toKWh(heatW) * (1 - coolRatio / 100);
     const annualElecYen = (coolW: number, heatW: number) =>
-      weightedKWh(coolW, heatW) * dailyHours * 365 * kWhCostWithTax;
+      weightedKWh(coolW, heatW) * dailyHours * 365 * kWhCost;
 
     const specs = acSpecs[selectedTatami] as Record<string, { coolW: number; heatW: number }>;
     return availableSeries.map(series => {
       const spec = specs[series];
       const unitPrice = parseInt(unitPrices[series], 10) || 0;
+      const installCost = parseInt(installCosts[series], 10) || 0;
       const annualCost = annualElecYen(spec.coolW, spec.heatW);
       const totalElecCost = annualCost * years;
-      const totalCost = unitPrice + totalElecCost;
-      return { series, unitPrice, annualElecCost: annualCost, totalElecCost, totalCost };
+      const totalCost = unitPrice + installCost + totalElecCost;
+      return { series, unitPrice, installCost, annualElecCost: annualCost, totalElecCost, totalCost };
     });
-  }, [selectedTatami, unitPrices, coolRatio, dailyHours, availableSeries, years]);
+  }, [selectedTatami, unitPrices, installCosts, coolRatio, dailyHours, availableSeries, years, kWhCost]);
 
   const cheapestSeries = useMemo(() => {
     const validResults = calculationResults.filter(r => r.unitPrice > 0);
@@ -213,7 +218,7 @@ const App: React.FC = () => {
       const dataPoint: Record<string, number | string> = { year: `${year}年`, yearNum: year };
 
       validResults.forEach(result => {
-        dataPoint[result.series] = Math.round(result.unitPrice + result.annualElecCost * year);
+        dataPoint[result.series] = Math.round(result.unitPrice + result.installCost + result.annualElecCost * year);
       });
 
       return dataPoint;
@@ -235,10 +240,27 @@ const App: React.FC = () => {
     setPriceFocus(prev => ({ ...prev, [series]: focused }));
   };
 
+  const handleInstallCostChange = (series: Series, value: string) => {
+    const normalizedValue = normalizeNumericInput(value);
+    const numericValue = normalizedValue.replace(/[^0-9]/g, '');
+    setInstallCosts(prev => ({ ...prev, [series]: numericValue }));
+  };
+
+  const handleInstallFocus = (series: Series, focused: boolean) => {
+    setInstallFocus(prev => ({ ...prev, [series]: focused }));
+  };
+
   const getDisplayPrice = (series: Series) => {
     const raw = unitPrices[series];
     if (!raw) return '';
     if (priceFocus[series]) return raw;
+    return new Intl.NumberFormat('ja-JP').format(parseInt(raw, 10));
+  };
+
+  const getDisplayInstallCost = (series: Series) => {
+    const raw = installCosts[series];
+    if (!raw) return '';
+    if (installFocus[series]) return raw;
     return new Intl.NumberFormat('ja-JP').format(parseInt(raw, 10));
   };
 
@@ -469,6 +491,43 @@ const App: React.FC = () => {
                               </Stack>
                             </CardContent>
                           </Card>
+
+                          <Card variant="outlined" sx={{ borderColor: '#dbe7fb' }}>
+                            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                              <Stack spacing={1.5}>
+                                <Stack direction="row" alignItems="center" spacing={1}>
+                                  <SettingsIcon fontSize="small" color="action" />
+                                  <Typography variant="subtitle1" fontWeight={700}>標準工事費</Typography>
+                                </Stack>
+                                <Typography variant="body2" color="text.secondary">
+                                  本体価格と別で計上します。未入力は0円扱いです。
+                                </Typography>
+                                <Stack spacing={1.25}>
+                                  {availableSeries.map(series => (
+                                    <TextField
+                                      key={`${series}-install`}
+                                      label={`${series}シリーズ`}
+                                      value={getDisplayInstallCost(series)}
+                                      onChange={(e) => handleInstallCostChange(series, e.target.value)}
+                                      onFocus={() => handleInstallFocus(series, true)}
+                                      onBlur={() => handleInstallFocus(series, false)}
+                                      fullWidth
+                                      size="small"
+                                      placeholder="例: 22000"
+                                      inputProps={{
+                                        inputMode: 'numeric',
+                                        pattern: '[0-9]*',
+                                        'aria-label': `${series}シリーズの標準工事費`,
+                                      }}
+                                      InputProps={{
+                                        endAdornment: <InputAdornment position="end">円</InputAdornment>,
+                                      }}
+                                    />
+                                  ))}
+                                </Stack>
+                              </Stack>
+                            </CardContent>
+                          </Card>
                         </Stack>
                       </Grid>
 
@@ -482,6 +541,38 @@ const App: React.FC = () => {
                                   比較条件
                                 </Typography>
                               </Stack>
+
+                              <Card variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
+                                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                                  <Stack spacing={1.25}>
+                                    <Stack direction="row" alignItems="center" spacing={1}>
+                                      <MoneyIcon fontSize="small" color="action" />
+                                      <Typography variant="subtitle2" color="text.secondary" fontWeight="700">
+                                        電気料金単価: {kWhCost}円/kWh
+                                      </Typography>
+                                    </Stack>
+                                    <TextField
+                                      fullWidth
+                                      size="small"
+                                      value={kWhCost}
+                                      onChange={(e) => {
+                                        const normalized = normalizeNumericInput(e.target.value);
+                                        const numeric = Number(normalized.replace(/[^0-9.]/g, ''));
+                                        if (!Number.isNaN(numeric) && numeric > 0) {
+                                          setKWhCost(Number(numeric.toFixed(2)));
+                                        }
+                                      }}
+                                      inputProps={{
+                                        inputMode: 'decimal',
+                                        'aria-label': '電気料金単価',
+                                      }}
+                                      InputProps={{
+                                        endAdornment: <InputAdornment position="end">円/kWh</InputAdornment>,
+                                      }}
+                                    />
+                                  </Stack>
+                                </CardContent>
+                              </Card>
 
                               <Card variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
                                 <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
@@ -653,7 +744,7 @@ const App: React.FC = () => {
                           エアコン {selectedTatami}畳用 シリーズ比較表
                         </Typography>
                         <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 0.5 }}>
-                          使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100 - coolRatio}% / 電気代 ¥{kWhCostWithTax}/kWh
+                          使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100 - coolRatio}% / 電気代 ¥{kWhCost}/kWh
                         </Typography>
                       </Box>
 
@@ -663,7 +754,7 @@ const App: React.FC = () => {
                           <MoneyIcon color="primary" />
                           <Typography variant="h6" fontWeight="600">{years}年総費用比較</Typography>
                           <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                            本体価格 + {years}年間の電気代
+                            本体価格 + 工事費 + {years}年間の電気代
                           </Typography>
                         </Box>
                         <TableContainer>
@@ -672,6 +763,7 @@ const App: React.FC = () => {
                               <TableRow sx={{ bgcolor: '#f8fafc' }}>
                                 <TableCell align="center" sx={{ fontWeight: 600 }}>シリーズ</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 600 }}>本体価格</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 600 }}>工事費</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 600 }}>年間電気代</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 600 }}>{years}年電気代</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 600, color: 'primary.main' }}>{years}年総費用</TableCell>
@@ -689,6 +781,7 @@ const App: React.FC = () => {
                                     </Stack>
                                   </TableCell>
                                   <TableCell align="right">{formatCurrency(result.unitPrice)}</TableCell>
+                                  <TableCell align="right">{formatCurrency(result.installCost)}</TableCell>
                                   <TableCell align="right">{formatCurrency(result.annualElecCost)}</TableCell>
                                   <TableCell align="right">{formatCurrency(result.totalElecCost)}</TableCell>
                                   <TableCell align="right">
@@ -918,6 +1011,35 @@ const App: React.FC = () => {
                                 })}
                               </TableRow>
 
+                              {/* 工事費行 */}
+                              <TableRow>
+                                <TableCell sx={{ fontWeight: 600 }}>
+                                  <Stack direction="row" alignItems="center" spacing={0.5}>
+                                    <SettingsIcon fontSize="small" color="action" />
+                                    <span>工事費</span>
+                                  </Stack>
+                                </TableCell>
+                                {availableSeries.map(series => {
+                                  const info = seriesFeatures[series];
+                                  const result = calculationResults.find(r => r.series === series);
+                                  return (
+                                    <TableCell
+                                      key={`${series}-install-cost`}
+                                      align="center"
+                                      sx={{
+                                        bgcolor: info.highlight ? '#eff6ff' : 'inherit',
+                                        borderLeft: info.highlight ? '2px solid #2563eb' : 'none',
+                                        borderRight: info.highlight ? '2px solid #2563eb' : 'none',
+                                      }}
+                                    >
+                                      <Typography fontWeight="600">
+                                        {result ? formatCurrency(result.installCost) : '-'}
+                                      </Typography>
+                                    </TableCell>
+                                  );
+                                })}
+                              </TableRow>
+
                               {/* N年総費用行 */}
                               <TableRow sx={{ bgcolor: '#f0f9ff' }}>
                                 <TableCell sx={{ fontWeight: 600 }}>
@@ -1059,7 +1181,7 @@ const App: React.FC = () => {
                           エアコン {selectedTatami}畳用 シリーズ比較表
                         </Typography>
                         <Typography variant="h6" color="text.secondary" textAlign="center" sx={{ mt: 1 }}>
-                          使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100 - coolRatio}% / 電気代 ¥{kWhCostWithTax}/kWh
+                          使用条件：1日{dailyHours}時間 / 冷房{coolRatio}%・暖房{100 - coolRatio}% / 電気代 ¥{kWhCost}/kWh
                         </Typography>
                       </Box>
 
@@ -1070,7 +1192,7 @@ const App: React.FC = () => {
                             {years}年総費用比較
                           </Typography>
                           <Typography variant="body1" color="text.secondary">
-                            本体価格 + {years}年間の電気代
+                            本体価格 + 工事費 + {years}年間の電気代
                           </Typography>
                         </Box>
                         <TableContainer>
@@ -1079,6 +1201,7 @@ const App: React.FC = () => {
                               <TableRow sx={{ bgcolor: '#f8fafc' }}>
                                 <TableCell align="center" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>シリーズ</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>本体価格</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>工事費</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>年間電気代</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{years}年電気代</TableCell>
                                 <TableCell align="right" sx={{ fontWeight: 700, fontSize: '1.1rem', color: 'primary.main' }}>{years}年総費用</TableCell>
@@ -1094,6 +1217,7 @@ const App: React.FC = () => {
                                     )}
                                   </TableCell>
                                   <TableCell align="right" sx={{ fontSize: '1.1rem' }}>{formatCurrency(result.unitPrice)}</TableCell>
+                                  <TableCell align="right" sx={{ fontSize: '1.1rem' }}>{formatCurrency(result.installCost)}</TableCell>
                                   <TableCell align="right" sx={{ fontSize: '1.1rem' }}>{formatCurrency(result.annualElecCost)}</TableCell>
                                   <TableCell align="right" sx={{ fontSize: '1.1rem' }}>{formatCurrency(result.totalElecCost)}</TableCell>
                                   <TableCell align="right">
@@ -1272,6 +1396,29 @@ const App: React.FC = () => {
                                   );
                                 })}
                               </TableRow>
+                              {/* 工事費 */}
+                              <TableRow>
+                                <TableCell sx={{ fontWeight: 700, fontSize: '1.1rem' }}>工事費</TableCell>
+                                {availableSeries.map(series => {
+                                  const info = seriesFeatures[series];
+                                  const result = calculationResults.find(r => r.series === series);
+                                  return (
+                                    <TableCell
+                                      key={`pdf-install-${series}`}
+                                      align="center"
+                                      sx={{
+                                        bgcolor: info.highlight ? '#eff6ff' : 'inherit',
+                                        borderLeft: info.highlight ? '3px solid #2563eb' : 'none',
+                                        borderRight: info.highlight ? '3px solid #2563eb' : 'none',
+                                      }}
+                                    >
+                                      <Typography fontWeight="700" fontSize="1.1rem">
+                                        {result ? formatCurrency(result.installCost) : '-'}
+                                      </Typography>
+                                    </TableCell>
+                                  );
+                                })}
+                              </TableRow>
                               {/* 総費用 */}
                               <TableRow sx={{ bgcolor: '#f0f9ff' }}>
                                 <TableCell sx={{ fontWeight: 700, fontSize: '1.1rem' }}>{years}年総費用</TableCell>
@@ -1365,16 +1512,19 @@ const App: React.FC = () => {
                     <Typography variant="body2" color="text.secondary" fontWeight="700">計算式</Typography>
                   </Stack>
                   <Typography variant="body2" color="text.secondary" display="block" textAlign="center">
-                    年間電気代 = (冷房W × {coolRatio}% + 暖房W × {100 - coolRatio}%) × {dailyHours}h/日 × 365日 × ¥{kWhCostWithTax}/kWh
+                    年間電気代 = (冷房W × {coolRatio}% + 暖房W × {100 - coolRatio}%) × {dailyHours}h/日 × 365日 × ¥{kWhCost}/kWh
                   </Typography>
                   <Typography variant="body2" color="text.secondary" display="block" textAlign="center">
-                    {years}年総費用 = 本体価格 + (年間電気代 × {years}年)
+                    {years}年総費用 = 本体価格 + 工事費 + (年間電気代 × {years}年)
                   </Typography>
                 </Paper>
             <OldACComparison
               selectedTatami={selectedTatami}
               dailyHours={dailyHours}
               coolRatio={coolRatio}
+              years={years}
+              kWhCost={kWhCost}
+              planResults={calculationResults}
             />
           </Stack>
         </Container>

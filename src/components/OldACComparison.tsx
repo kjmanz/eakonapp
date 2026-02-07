@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Card,
   CardContent,
@@ -9,7 +9,6 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
-  Button,
   Chip,
   Table,
   TableBody,
@@ -18,21 +17,34 @@ import {
   TableHead,
   TableRow,
   Grid,
+  Alert,
+  Divider,
 } from '@mui/material';
 import {
   CompareArrows as CompareIcon,
-  AttachMoney as MoneyIcon,
-  AccessTime as TimeIcon,
-  Spa as EcoIcon,
   TrendingUp as TrendingUpIcon,
+  Bolt as BoltIcon,
+  CalendarMonth as CalendarIcon,
 } from '@mui/icons-material';
-import { acSpecs, kWhCostWithTax } from '../data/acSpecs';
+import { acSpecs } from '../data/acSpecs';
 import type { Series } from '../types';
+
+interface PlanResult {
+  series: Series;
+  unitPrice: number;
+  installCost: number;
+  annualElecCost: number;
+  totalElecCost: number;
+  totalCost: number;
+}
 
 interface OldACComparisonProps {
   selectedTatami: number;
   dailyHours: number;
   coolRatio: number;
+  years: number;
+  kWhCost: number;
+  planResults: PlanResult[];
 }
 
 type SeriesSpec = { coolW: number; heatW: number };
@@ -44,6 +56,13 @@ interface OldACYearProfile {
 }
 
 const oldCopReference = 5.2;
+const SERIES_ORDER: Series[] = ['XS', 'EX', 'J'];
+
+const seriesMeta: Record<Series, { label: string; short: string; color: string; bg: string }> = {
+  XS: { label: 'XSシリーズ（おすすめ）', short: 'XS', color: '#2563eb', bg: '#eff6ff' },
+  EX: { label: 'EXシリーズ（バランス）', short: 'EX', color: '#d97706', bg: '#fffbeb' },
+  J: { label: 'Jシリーズ（初期費用重視）', short: 'J', color: '#64748b', bg: '#f1f5f9' },
+};
 
 const getYearDescription = (age: number): string => {
   if (age <= 4) return '比較的新しい';
@@ -53,7 +72,6 @@ const getYearDescription = (age: number): string => {
   return '高消費電力ゾーン';
 };
 
-// 年式が古いほど消費電力が増える傾向を、緩やかな二次式で近似
 const estimateEfficiencyFactor = (age: number): number => {
   const clampedAge = Math.max(0, Math.min(age, 25));
   return Number((1 + clampedAge * 0.02 + clampedAge * clampedAge * 0.001).toFixed(3));
@@ -79,449 +97,322 @@ const buildOldACYearProfiles = (): Record<string, OldACYearProfile> => {
 const oldACYearProfiles = buildOldACYearProfiles();
 const purchaseYearOptions = Object.keys(oldACYearProfiles).sort((a, b) => Number(b) - Number(a));
 
-// 新しいエアコンの機能データ（2026年モデル）
-const seriesFeatures: Record<Series, { cop: number; nanoeX: string; autoCleaning: boolean }> = {
-  XS: { cop: 6.1, nanoeX: '48兆', autoCleaning: true },
-  EX: { cop: 5.8, nanoeX: '12兆', autoCleaning: true },
-  J: { cop: 5.2, nanoeX: 'なし', autoCleaning: false },
+const formatCurrency = (amount: number) =>
+  `¥${new Intl.NumberFormat('ja-JP').format(Math.round(amount))}`;
+
+const formatYears = (value: number | null) => {
+  if (value === null) return '回収不可';
+  if (value <= 0) return '即回収';
+  if (value > 99) return '99年以上';
+  return `${value.toFixed(1)}年`;
 };
 
-const seriesLabels: Record<Series, string> = {
-  XS: 'XSシリーズ（最上位）',
-  EX: 'EXシリーズ（中位）',
-  J: 'Jシリーズ（標準）',
-};
-
-export const OldACComparison: React.FC<OldACComparisonProps> = ({ selectedTatami, dailyHours, coolRatio }) => {
+export const OldACComparison: React.FC<OldACComparisonProps> = ({
+  selectedTatami,
+  dailyHours,
+  coolRatio,
+  years,
+  kWhCost,
+  planResults,
+}) => {
   const [purchaseYear, setPurchaseYear] = useState<string>(() =>
     oldACYearProfiles['2018'] ? '2018' : (purchaseYearOptions[0] ?? ''),
   );
-  const [newSeries, setNewSeries] = useState<Series>('XS');
-  const [compared, setCompared] = useState(false);
 
   const tatamiSpecs = useMemo(
     () => acSpecs[selectedTatami as keyof typeof acSpecs] as TatamiSpecs | undefined,
     [selectedTatami],
   );
 
-  const availableSeries = useMemo(
-    () => (['XS', 'EX', 'J'] as Series[]).filter((series) => Boolean(tatamiSpecs?.[series])),
-    [tatamiSpecs],
+  const sortedPlans = useMemo(
+    () => [...planResults].sort((a, b) => SERIES_ORDER.indexOf(a.series) - SERIES_ORDER.indexOf(b.series)),
+    [planResults],
   );
 
-  useEffect(() => {
-    if (availableSeries.length === 0) return;
-    if (!availableSeries.includes(newSeries)) {
-      setNewSeries(availableSeries[0]);
-      setCompared(false);
-    }
-  }, [availableSeries, newSeries]);
+  const validPlans = useMemo(
+    () => sortedPlans.filter((plan) => plan.unitPrice > 0),
+    [sortedPlans],
+  );
 
-  const calculateComparison = useMemo(() => {
-    if (!compared || !purchaseYear || !oldACYearProfiles[purchaseYear]) return null;
-    if (!tatamiSpecs || !tatamiSpecs[newSeries]) return null;
+  const oldACEstimate = useMemo(() => {
+    const yearProfile = oldACYearProfiles[purchaseYear];
+    if (!yearProfile || !tatamiSpecs) return null;
 
-    const oldYearProfile = oldACYearProfiles[purchaseYear];
     const oldReferenceSpecs = tatamiSpecs.J ?? tatamiSpecs.EX ?? tatamiSpecs.XS;
     if (!oldReferenceSpecs) return null;
 
-    const oldAC = {
-      cop: Number(Math.max(2.6, oldCopReference / oldYearProfile.efficiencyFactor).toFixed(1)),
-      powerCool: Math.round(oldReferenceSpecs.coolW * oldYearProfile.efficiencyFactor),
-      powerHeat: Math.round(oldReferenceSpecs.heatW * oldYearProfile.efficiencyFactor),
-      description: oldYearProfile.description,
-    };
+    const oldPowerCool = Math.round(oldReferenceSpecs.coolW * yearProfile.efficiencyFactor);
+    const oldPowerHeat = Math.round(oldReferenceSpecs.heatW * yearProfile.efficiencyFactor);
 
-    const newACSpecs = tatamiSpecs[newSeries] as SeriesSpec;
-    const features = seriesFeatures[newSeries];
-
-    // 新しいエアコンのデータを統合
-    const newAC = {
-      cop: features.cop,
-      powerCool: newACSpecs.coolW,
-      powerHeat: newACSpecs.heatW,
-      nanoeX: features.nanoeX,
-      autoCleaning: features.autoCleaning,
-    };
-
-    // 年間電気代計算
     const toKWh = (w: number) => w / 1000;
-    const weightedKWh = (coolW: number, heatW: number) =>
-      toKWh(coolW) * (coolRatio / 100) + toKWh(heatW) * (1 - coolRatio / 100);
-
-    const oldAnnualCost = weightedKWh(oldAC.powerCool, oldAC.powerHeat) * dailyHours * 365 * kWhCostWithTax;
-    const newAnnualCost = weightedKWh(newAC.powerCool, newAC.powerHeat) * dailyHours * 365 * kWhCostWithTax;
-
-    const annualSavings = oldAnnualCost - newAnnualCost;
-    const tenYearSavings = annualSavings * 10;
-
-    // フィルター掃除回数（古いエアコンは月1回、新しいのは自動）
-    const oldCleaningTime = 12 * 10; // 10年で120回、1回あたり1時間
-    const newCleaningTime = newAC.autoCleaning ? 0 : 6 * 10; // Jシリーズは月2回（1回30分）
-
-    // CO2削減量（簡易計算: 1kWh = 0.5kg CO2）
-    const co2Reduction = (oldAnnualCost / kWhCostWithTax - newAnnualCost / kWhCostWithTax) * 0.5 * 10;
-
-    // 木の本数（1本で年間18kg CO2吸収）
-    const treesEquivalent = co2Reduction / 18 / 10;
+    const weightedKWh =
+      toKWh(oldPowerCool) * (coolRatio / 100) + toKWh(oldPowerHeat) * (1 - coolRatio / 100);
 
     return {
-      oldAC,
-      newAC,
-      oldAnnualCost,
-      newAnnualCost,
-      annualSavings,
-      tenYearSavings,
-      oldCleaningTime,
-      newCleaningTime,
-      co2Reduction,
-      treesEquivalent,
-      powerReduction: oldAC.powerCool - newAC.powerCool,
+      description: yearProfile.description,
+      cop: Number(Math.max(2.6, oldCopReference / yearProfile.efficiencyFactor).toFixed(1)),
+      powerCool: oldPowerCool,
+      powerHeat: oldPowerHeat,
+      annualCost: weightedKWh * dailyHours * 365 * kWhCost,
     };
-  }, [compared, purchaseYear, newSeries, tatamiSpecs, dailyHours, coolRatio]);
+  }, [purchaseYear, tatamiSpecs, coolRatio, dailyHours, kWhCost]);
 
-  const formatCurrency = (amount: number) =>
-    `¥${new Intl.NumberFormat('ja-JP').format(Math.round(amount))}`;
+  const proposalRows = useMemo(() => {
+    if (!oldACEstimate) return [];
 
-  const getRecommendationLevel = (year: string): { level: number; stars: string; message: string } => {
+    return validPlans.map((plan) => {
+      const initialCost = plan.unitPrice + plan.installCost;
+      const annualSavingsVsOld = oldACEstimate.annualCost - plan.annualElecCost;
+      const monthlySavingsVsOld = annualSavingsVsOld / 12;
+      const paybackYears = annualSavingsVsOld > 0 ? initialCost / annualSavingsVsOld : null;
+
+      return {
+        ...plan,
+        initialCost,
+        monthlyElecCost: plan.annualElecCost / 12,
+        annualSavingsVsOld,
+        monthlySavingsVsOld,
+        paybackYears,
+      };
+    });
+  }, [validPlans, oldACEstimate]);
+
+  const cheapestForYears = useMemo(() => {
+    if (proposalRows.length === 0) return null;
+    return proposalRows.reduce((min, current) =>
+      current.totalCost < min.totalCost ? current : min,
+    );
+  }, [proposalRows]);
+
+  const xsPaybackVsOther = useMemo(() => {
+    const xs = proposalRows.find((row) => row.series === 'XS');
+    if (!xs) return [];
+
+    return proposalRows
+      .filter((row) => row.series !== 'XS')
+      .map((row) => {
+        const initialDiff = xs.initialCost - row.initialCost;
+        const annualDiff = row.annualElecCost - xs.annualElecCost;
+
+        let payback: number | null = null;
+        if (initialDiff <= 0) {
+          payback = 0;
+        } else if (annualDiff > 0) {
+          payback = initialDiff / annualDiff;
+        }
+
+        return {
+          baseSeries: row.series,
+          initialDiff,
+          annualDiff,
+          payback,
+        };
+      });
+  }, [proposalRows]);
+
+  const recommendationSeries = useMemo(() => {
+    if (proposalRows.length === 0) return null;
+
+    const xs = proposalRows.find((row) => row.series === 'XS');
     const currentYear = new Date().getFullYear();
-    const acAge = currentYear - parseInt(year);
+    const acAge = currentYear - Number(purchaseYear);
 
-    if (acAge >= 20) {
-      return { level: 5, stars: '★★★★★', message: '交換推奨度: 緊急（20年以上経過）' };
-    } else if (acAge >= 15) {
-      return { level: 5, stars: '★★★★★', message: '交換推奨度: 最高（15年以上経過）' };
-    } else if (acAge >= 10) {
-      return { level: 4, stars: '★★★★☆', message: '交換推奨度: 高い（10年以上経過）' };
-    } else if (acAge >= 8) {
-      return { level: 3, stars: '★★★☆☆', message: '交換推奨度: 中程度（8年以上経過）' };
-    } else if (acAge >= 6) {
-      return { level: 2, stars: '★★☆☆☆', message: '交換推奨度: 検討（6年以上経過）' };
-    } else if (acAge >= 4) {
-      return { level: 1, stars: '★☆☆☆☆', message: '交換推奨度: 低い（4年以上経過）' };
-    } else {
-      return { level: 0, stars: '☆☆☆☆☆', message: '交換推奨度: なし（3年以内）' };
+    if (xs) {
+      const recoversWithinPeriod = xsPaybackVsOther.some(
+        (item) => item.payback !== null && item.payback <= years,
+      );
+      if (acAge >= 8 || recoversWithinPeriod) return 'XS' as Series;
     }
-  };
 
-  const recommendation = getRecommendationLevel(purchaseYear);
+    return cheapestForYears?.series ?? proposalRows[0].series;
+  }, [proposalRows, purchaseYear, years, xsPaybackVsOther, cheapestForYears]);
 
-  // シリーズに応じた背景色
-  const getSeriesBgColor = (series: Series) => {
-    switch (series) {
-      case 'XS': return '#eff6ff'; // 青
-      case 'EX': return '#fffbeb'; // 黄
-      case 'J': return '#f1f5f9'; // 灰
+  const recommendationNote = useMemo(() => {
+    if (!recommendationSeries) return '';
+    if (recommendationSeries === 'XS') {
+      return '長期運用で回収しやすく、機能・快適性も高いのでXS推奨です。';
     }
-  };
-
-  // シリーズに応じたテキスト色
-  const getSeriesTextColor = (series: Series) => {
-    switch (series) {
-      case 'XS': return '#2563eb'; // 青
-      case 'EX': return '#d97706'; // 黄
-      case 'J': return '#64748b'; // 灰
+    if (recommendationSeries === 'EX') {
+      return '初期費用とランニングコストのバランス重視ならEXが有利です。';
     }
-  };
+    return '初期費用最小で進めるならJが現実的です。';
+  }, [recommendationSeries]);
 
   return (
-    <Stack spacing={3}>
-      <Card>
-        <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <CompareIcon color="primary" />
-          <Typography variant="h6" fontWeight="600">今のエアコンと比較してどれくらいお得？</Typography>
-        </Box>
-        <CardContent sx={{ p: 3 }}>
-          <Stack spacing={3}>
-            {/* ステップ1: 入力 */}
-            <Card elevation={0} sx={{ border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
-              <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
-                <CompareIcon color="primary" fontSize="small" />
-                <Typography variant="h6" fontWeight="600">ステップ1: 今お使いのエアコンの情報を入力</Typography>
-              </Box>
-              <CardContent sx={{ p: 3 }}>
+    <Card>
+      <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
+        <CompareIcon color="primary" />
+        <Typography variant="h6" fontWeight="700">商談セット提案（現行比較 + 3プラン）</Typography>
+      </Box>
+      <CardContent sx={{ p: 3 }}>
+        <Stack spacing={2.5}>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 5 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>今のエアコン購入年</InputLabel>
+                <Select
+                  value={purchaseYear}
+                  label="今のエアコン購入年"
+                  onChange={(e) => setPurchaseYear(e.target.value)}
+                >
+                  {purchaseYearOptions.map((year) => {
+                    const data = oldACYearProfiles[year];
+                    return (
+                      <MenuItem key={year} value={year}>
+                        {year}年（{data.description}）
+                      </MenuItem>
+                    );
+                  })}
+                </Select>
+              </FormControl>
+            </Grid>
 
-                <Grid container spacing={3}>
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <FormControl fullWidth size="small">
-                      <InputLabel>購入年</InputLabel>
-                      <Select
-                        value={purchaseYear}
-                        label="購入年"
-                        onChange={(e) => setPurchaseYear(e.target.value)}
-                      >
-                        {purchaseYearOptions.map((year) => {
-                          const data = oldACYearProfiles[year];
-                          return (
-                            <MenuItem key={year} value={year}>
-                              {year}年（{data.description}）
-                            </MenuItem>
-                          );
-                        })}
-                      </Select>
-                    </FormControl>
-                  </Grid>
+            <Grid size={{ xs: 12, md: 7 }}>
+              <Card variant="outlined" sx={{ p: 1.5, bgcolor: '#f8fafc', borderColor: '#e2e8f0' }}>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                  <Chip icon={<CalendarIcon />} label={`比較期間 ${years}年`} size="small" />
+                  <Chip icon={<BoltIcon />} label={`電気代単価 ${kWhCost}円/kWh`} size="small" />
+                  <Chip label={`${selectedTatami}畳`} size="small" />
+                  <Chip label={`1日${dailyHours}時間`} size="small" />
+                  <Chip label={`冷房${coolRatio}% / 暖房${100 - coolRatio}%`} size="small" />
+                </Stack>
+              </Card>
+            </Grid>
+          </Grid>
 
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <FormControl fullWidth size="small">
-                      <InputLabel>比較する新エアコン</InputLabel>
-                      <Select
-                        value={newSeries}
-                        label="比較する新エアコン"
-                        onChange={(e) => setNewSeries(e.target.value as Series)}
-                      >
-                        {availableSeries.map((series) => (
-                          <MenuItem key={series} value={series}>
-                            {seriesLabels[series]}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                </Grid>
-
-                {/* 選択中の条件 */}
-                <Box sx={{ mt: 2, p: 2, bgcolor: getSeriesBgColor(newSeries), borderRadius: 1, textAlign: 'center' }}>
+          {oldACEstimate && (
+            <Card variant="outlined" sx={{ borderColor: '#dbe7fb', bgcolor: '#f8fbff' }}>
+              <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
+                  <Chip label={`現在推定年間電気代 ${formatCurrency(oldACEstimate.annualCost)}`} color="warning" />
+                  <Chip label={`推定COP ${oldACEstimate.cop}`} />
+                  <Chip label={`冷房 ${oldACEstimate.powerCool}W / 暖房 ${oldACEstimate.powerHeat}W`} />
                   <Typography variant="body2" color="text.secondary">
-                    選択中の条件: <strong>{selectedTatami}畳 / {newSeries}シリーズ</strong>
+                    {purchaseYear}年製（{oldACEstimate.description}）
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    使用条件: 1日<strong>{dailyHours}時間</strong> / 冷房<strong>{coolRatio}%</strong>・暖房<strong>{100 - coolRatio}%</strong>
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                    購入年の消費電力は、同畳数の現行標準機種を基準に年式係数を掛けた推定値です。
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button
-                    variant="contained"
-                    size="large"
-                    onClick={() => setCompared(true)}
-                    startIcon={<CompareIcon />}
-                    disabled={availableSeries.length === 0}
-                  >
-                    比較する
-                  </Button>
-                </Box>
+                </Stack>
               </CardContent>
             </Card>
+          )}
 
-            {/* ステップ2: 結果 */}
-            {compared && calculateComparison && (
-              <Card elevation={0} sx={{ border: '1px solid #e2e8f0' }}>
-                <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CompareIcon color="primary" fontSize="small" />
-                  <Typography variant="h6" fontWeight="600">ステップ2: 比較結果</Typography>
-                </Box>
-                <CardContent sx={{ p: 3 }}>
+          {proposalRows.length === 0 && (
+            <Alert severity="info">本体価格を1つ以上入力すると、現行機との比較提案を表示します。</Alert>
+          )}
 
-                  {/* Before/After テーブル */}
-                  <TableContainer sx={{ mb: 3 }}>
-                    <Table>
-                      <TableHead>
-                        <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                          <TableCell sx={{ fontWeight: 700 }}>項目</TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 700 }}>今のエアコン</TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 700, bgcolor: newSeries === 'XS' ? '#eff6ff' : newSeries === 'EX' ? '#fffbeb' : '#f1f5f9' }}>
-                            新しいエアコン（{newSeries}）
+          {proposalRows.length > 0 && oldACEstimate && (
+            <>
+              <TableContainer component={Card} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                      <TableCell sx={{ fontWeight: 700 }}>提案プラン</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>初期費用</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>月額電気代</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>年間削減（対現行）</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>投資回収</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>{years}年総費用</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {proposalRows.map((row) => {
+                      const isRecommended = recommendationSeries === row.series;
+                      const isCheapest = cheapestForYears?.series === row.series;
+                      return (
+                        <TableRow key={row.series} sx={{ bgcolor: isRecommended ? seriesMeta[row.series].bg : 'inherit' }}>
+                          <TableCell>
+                            <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+                              <Typography fontWeight={700} sx={{ color: seriesMeta[row.series].color }}>
+                                {seriesMeta[row.series].label}
+                              </Typography>
+                              {isRecommended && <Chip label="商談おすすめ" color="primary" size="small" />}
+                              {isCheapest && <Chip label="最安" size="small" />}
+                            </Stack>
                           </TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 700 }}>差分</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        <TableRow>
-                          <TableCell>年式</TableCell>
-                          <TableCell align="center">
-                            {purchaseYear}年製
-                            <Typography component="span" variant="caption" color="text.secondary">
-                              {' '}（{calculateComparison.oldAC.description}）
-                            </Typography>
+                          <TableCell align="right">
+                            <Stack spacing={0.2} alignItems="flex-end">
+                              <Typography fontWeight={700}>{formatCurrency(row.initialCost)}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                本体{formatCurrency(row.unitPrice)} + 工事{formatCurrency(row.installCost)}
+                              </Typography>
+                            </Stack>
                           </TableCell>
-                          <TableCell align="center" sx={{ bgcolor: getSeriesBgColor(newSeries) }}>2026年製</TableCell>
-                          <TableCell align="center">-</TableCell>
-                        </TableRow>
-                        <TableRow sx={{ bgcolor: '#fafafa' }}>
-                          <TableCell>年間電気代</TableCell>
-                          <TableCell align="center">{formatCurrency(calculateComparison.oldAnnualCost)}</TableCell>
-                          <TableCell align="center" sx={{ bgcolor: getSeriesBgColor(newSeries), fontWeight: 700 }}>
-                            {formatCurrency(calculateComparison.newAnnualCost)}
+                          <TableCell align="right">{formatCurrency(row.monthlyElecCost)}</TableCell>
+                          <TableCell align="right">
+                            <Stack spacing={0.2} alignItems="flex-end">
+                              <Typography color={row.annualSavingsVsOld > 0 ? 'success.main' : 'text.secondary'} fontWeight={700}>
+                                {formatCurrency(row.annualSavingsVsOld)}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                月あたり {formatCurrency(row.monthlySavingsVsOld)}
+                              </Typography>
+                            </Stack>
                           </TableCell>
-                          <TableCell align="center">
-                            <Chip
-                              label={formatCurrency(calculateComparison.annualSavings)}
-                              color="success"
-                              size="small"
-                            />
-                          </TableCell>
-                        </TableRow>
-                        <TableRow>
-                          <TableCell>消費電力（冷房）</TableCell>
-                          <TableCell align="center">{calculateComparison.oldAC.powerCool}W</TableCell>
-                          <TableCell align="center" sx={{ bgcolor: getSeriesBgColor(newSeries) }}>{calculateComparison.newAC.powerCool}W</TableCell>
-                          <TableCell align="center">
-                            <Chip label={`-${calculateComparison.powerReduction}W`} color="success" size="small" />
-                          </TableCell>
-                        </TableRow>
-                        <TableRow sx={{ bgcolor: '#fafafa' }}>
-                          <TableCell>COP（成績係数）</TableCell>
-                          <TableCell align="center">{calculateComparison.oldAC.cop}</TableCell>
-                          <TableCell align="center" sx={{ bgcolor: getSeriesBgColor(newSeries), fontWeight: 700 }}>
-                            {calculateComparison.newAC.cop}
-                          </TableCell>
-                          <TableCell align="center">
-                            <Chip
-                              label={`+${(calculateComparison.newAC.cop - calculateComparison.oldAC.cop).toFixed(1)}`}
-                              color="success"
-                              size="small"
-                            />
+                          <TableCell align="right">{formatYears(row.paybackYears)}</TableCell>
+                          <TableCell align="right">
+                            <Typography fontWeight={700}>{formatCurrency(row.totalCost)}</Typography>
                           </TableCell>
                         </TableRow>
-                        <TableRow>
-                          <TableCell>ナノイーX</TableCell>
-                          <TableCell align="center"><Typography color="error">なし</Typography></TableCell>
-                          <TableCell align="center" sx={{ bgcolor: getSeriesBgColor(newSeries), fontWeight: 700 }}>
-                            {calculateComparison.newAC.nanoeX}
-                          </TableCell>
-                          <TableCell align="center">
-                            <Chip label={calculateComparison.newAC.nanoeX === 'なし' ? '-' : '大幅UP'} color={calculateComparison.newAC.nanoeX === 'なし' ? 'default' : 'success'} size="small" />
-                          </TableCell>
-                        </TableRow>
-                        <TableRow sx={{ bgcolor: '#fafafa' }}>
-                          <TableCell>フィルター掃除</TableCell>
-                          <TableCell align="center">手動（月1回）</TableCell>
-                          <TableCell align="center" sx={{ bgcolor: getSeriesBgColor(newSeries) }}>
-                            {calculateComparison.newAC.autoCleaning ? '自動排出' : '手動（月2回）'}
-                          </TableCell>
-                          <TableCell align="center">
-                            <Chip label={calculateComparison.newAC.autoCleaning ? '手間ゼロ' : '半減'} color={calculateComparison.newAC.autoCleaning ? 'success' : 'warning'} size="small" />
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
 
-                  {/* 10年間メリット */}
-                  <Card
-                    elevation={0}
-                    sx={{
-                      bgcolor: getSeriesBgColor(newSeries),
-                      border: `2px solid ${getSeriesTextColor(newSeries)}40`,
-                      mb: 3,
-                    }}
-                  >
-                    <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <TrendingUpIcon sx={{ color: getSeriesTextColor(newSeries) }} fontSize="small" />
-                      <Typography variant="h6" fontWeight="700" sx={{ color: getSeriesTextColor(newSeries) }}>
-                        📈 10年間でのトータルメリット（{newSeries}シリーズ）
+              <Card variant="outlined" sx={{ borderColor: '#bfdbfe', bgcolor: '#eff6ff' }}>
+                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <TrendingUpIcon color="primary" fontSize="small" />
+                      <Typography fontWeight={700} color="primary.main">XS差額回収シミュレーション</Typography>
+                    </Stack>
+
+                    {xsPaybackVsOther.length === 0 && (
+                      <Typography variant="body2" color="text.secondary">
+                        XSと比較できるプランがありません。
                       </Typography>
-                    </Box>
-                    <CardContent sx={{ p: 3 }}>
+                    )}
 
-                      <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                          <Card variant="outlined" sx={{ height: '100%', borderColor: 'success.light', bgcolor: '#f0fdf4' }}>
-                            <CardContent sx={{ p: 2, textAlign: 'center', '&:last-child': { pb: 2 } }}>
-                              <MoneyIcon color="success" sx={{ fontSize: 32, mb: 1 }} />
-                              <Typography variant="body2" color="text.secondary">電気代節約</Typography>
-                              <Typography variant="h5" fontWeight="700" color="success.main" sx={{ my: 0.5 }}>
-                                {formatCurrency(calculateComparison.tenYearSavings)}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', bgcolor: 'white', py: 0.5, px: 1, borderRadius: 1, border: '1px solid', borderColor: 'success.light' }}>
-                                スマホ5台分
-                              </Typography>
-                            </CardContent>
-                          </Card>
-                        </Grid>
+                    {xsPaybackVsOther.map((item) => (
+                      <Box
+                        key={item.baseSeries}
+                        sx={{ p: 1.5, borderRadius: 1.5, bgcolor: 'white', border: '1px solid #dbeafe' }}
+                      >
+                        <Stack direction="row" justifyContent="space-between" spacing={1} useFlexGap flexWrap="wrap">
+                          <Typography variant="body2" fontWeight={700}>
+                            XS vs {seriesMeta[item.baseSeries].short}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            初期差額 {formatCurrency(item.initialDiff)} / 年間電気代差 {formatCurrency(item.annualDiff)}
+                          </Typography>
+                          <Chip
+                            size="small"
+                            color={item.payback !== null && item.payback <= years ? 'success' : 'default'}
+                            label={`回収: ${formatYears(item.payback)}`}
+                          />
+                        </Stack>
+                      </Box>
+                    ))}
 
-                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                          <Card variant="outlined" sx={{ height: '100%', borderColor: 'info.light', bgcolor: '#eff6ff' }}>
-                            <CardContent sx={{ p: 2, textAlign: 'center', '&:last-child': { pb: 2 } }}>
-                              <TimeIcon color="info" sx={{ fontSize: 32, mb: 1 }} />
-                              <Typography variant="body2" color="text.secondary">フィルター掃除時間</Typography>
-                              <Typography variant="h5" fontWeight="700" color="info.main" sx={{ my: 0.5 }}>
-                                {calculateComparison.newAC.autoCleaning ? '0' : '60'}時間
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                <span style={{ textDecoration: 'line-through' }}>{calculateComparison.oldCleaningTime}時間</span> から削減
-                              </Typography>
-                              <Typography variant="caption" color="info.main" fontWeight="bold" sx={{ display: 'block', mt: 0.5 }}>
-                                {calculateComparison.newAC.autoCleaning ? '有給15日分' : '有給7.5日分'} 相当
-                              </Typography>
-                            </CardContent>
-                          </Card>
-                        </Grid>
+                    <Divider />
 
-                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                          <Card variant="outlined" sx={{ height: '100%', borderColor: 'success.main', bgcolor: '#f0fdf4' }}>
-                            <CardContent sx={{ p: 2, textAlign: 'center', '&:last-child': { pb: 2 } }}>
-                              <EcoIcon sx={{ fontSize: 32, mb: 1, color: '#16a34a' }} />
-                              <Typography variant="body2" color="text.secondary">CO2削減</Typography>
-                              <Typography variant="h5" fontWeight="700" sx={{ color: '#16a34a', my: 0.5 }}>
-                                {calculateComparison.co2Reduction.toFixed(1)}kg
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', bgcolor: 'white', py: 0.5, px: 1, borderRadius: 1, border: '1px solid', borderColor: 'success.light' }}>
-                                木 {calculateComparison.treesEquivalent.toFixed(0)} 本分
-                              </Typography>
-                            </CardContent>
-                          </Card>
-                        </Grid>
-
-                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                          <Card variant="outlined" sx={{ height: '100%', borderColor: 'warning.light', bgcolor: '#fffbeb' }}>
-                            <CardContent sx={{ p: 2, textAlign: 'center', '&:last-child': { pb: 2 } }}>
-                              <TrendingUpIcon color="warning" sx={{ fontSize: 32, mb: 1 }} />
-                              <Typography variant="body2" color="text.secondary">交換推奨度</Typography>
-                              <Typography variant="h5" fontWeight="700" color="warning.main" sx={{ my: 0.5 }}>
-                                {recommendation.stars.replace(/☆/g, '')}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {recommendation.message.split(': ')[1]}
-                              </Typography>
-                            </CardContent>
-                          </Card>
-                        </Grid>
-                      </Grid>
-                    </CardContent>
-                  </Card>
-
-                  {/* 警告メッセージ */}
-                  {parseInt(purchaseYear) <= 2014 && (
-                    <Card
-                      elevation={0}
-                      sx={{
-                        p: 2,
-                        bgcolor: parseInt(purchaseYear) <= 2009 ? '#fecaca' : '#fef3c7',
-                        border: `1px solid ${parseInt(purchaseYear) <= 2009 ? '#ef4444' : '#fbbf24'}`,
-                        borderRadius: 2,
-                        mb: 2,
-                      }}
-                    >
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Typography variant="body2" fontWeight="600" color={parseInt(purchaseYear) <= 2009 ? '#991b1b' : '#92400e'}>
-                          {parseInt(purchaseYear) <= 2009 ? '🚨 緊急' : '⚠️ 注意'}
-                        </Typography>
-                        <Typography variant="body2" color={parseInt(purchaseYear) <= 2009 ? '#991b1b' : '#92400e'}>
-                          {parseInt(purchaseYear) <= 2009
-                            ? `15年以上前のエアコンは、故障時の修理が難しく、電気代も大幅に高くなります。交換で年間${formatCurrency(calculateComparison?.annualSavings || 0)}節約可能です！`
-                            : '製造から10年経過で修理費用が急騰します。「まだ使える」と思っていても、この機会に交換を！'}
-                        </Typography>
-                      </Stack>
-                    </Card>
-                  )}
-
-                  {/* アクション */}
-                  <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
-                    <Button variant="contained" color="primary" onClick={() => setCompared(false)}>
-                      条件を変更して再比較
-                    </Button>
-                  </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      <strong>{recommendationSeries ? seriesMeta[recommendationSeries].short : '-'}</strong> 推奨: {recommendationNote}
+                    </Typography>
+                  </Stack>
                 </CardContent>
               </Card>
-            )}
-          </Stack>
-        </CardContent>
-      </Card>
-    </Stack>
+
+              {Number(purchaseYear) <= 2014 && (
+                <Alert severity={Number(purchaseYear) <= 2009 ? 'error' : 'warning'}>
+                  {Number(purchaseYear) <= 2009
+                    ? '15年以上経過のため故障リスクと電気代負担が高い状態です。交換優先で提案するのが安全です。'
+                    : '10年以上経過で修理費が上がりやすい時期です。電気代削減と故障リスク低減をセットで提案できます。'}
+                </Alert>
+              )}
+            </>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 };
