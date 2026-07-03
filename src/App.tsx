@@ -49,7 +49,7 @@ import {
 } from '@mui/icons-material';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, TooltipProps,
-  LineChart, Line, Legend
+  LineChart, Line, Legend, ReferenceLine, LabelList
 } from 'recharts';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -411,6 +411,69 @@ const App: React.FC = () => {
     return null;
   };
 
+  // 折れ線グラフの差額マーカー用ラベル（線と被らないよう上部余白にピル型で表示）
+  const GapLabel = (props: { viewBox?: { x?: number; y?: number }; text?: string; fontSize?: number }) => {
+    const { viewBox, text = '', fontSize = 13 } = props;
+    if (!viewBox || viewBox.x === undefined) return null;
+
+    // 全角・半角を考慮したざっくり幅見積もり
+    const textWidth = [...text].reduce(
+      (w, ch) => w + (ch.charCodeAt(0) > 0xff ? fontSize : fontSize * 0.62),
+      0,
+    );
+    const padX = 10;
+    const pillH = fontSize + 12;
+    const anchorX = viewBox.x - 4;
+    const pillY = 4;
+    return (
+      <g>
+        <rect
+          x={anchorX - textWidth - padX * 2}
+          y={pillY}
+          width={textWidth + padX * 2}
+          height={pillH}
+          rx={pillH / 2}
+          fill="#fef2f2"
+          stroke="#fca5a5"
+        />
+        <text
+          x={anchorX - padX}
+          y={pillY + pillH / 2 + fontSize * 0.36}
+          textAnchor="end"
+          fill="#dc2626"
+          fontSize={fontSize}
+          fontWeight={700}
+        >
+          {text}
+        </text>
+      </g>
+    );
+  };
+
+  // 累積差額グラフ用Tooltip
+  const SavingsTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
+    if (active && payload && payload.length) {
+      return (
+        <Paper sx={{ p: 1.5, minWidth: 200 }}>
+          <Typography variant="subtitle2" fontWeight="bold" gutterBottom>{label}目</Typography>
+          <Stack spacing={0.5}>
+            {payload.map((entry) => {
+              const value = entry.value as number;
+              return (
+                <Typography key={entry.name} variant="body2" sx={{ color: entry.color }}>
+                  {entry.name}: {value >= 0
+                    ? <strong>XSが {formatCurrency(value)} おトク</strong>
+                    : <>XSが {formatCurrency(-value)} 高い（回収中）</>}
+                </Typography>
+              );
+            })}
+          </Stack>
+        </Paper>
+      );
+    }
+    return null;
+  };
+
   const validResults = useMemo(
     () => calculationResults.filter(r => r.unitPrice > 0),
     [calculationResults],
@@ -468,6 +531,40 @@ const App: React.FC = () => {
     if (saving <= 0) return null;
 
     return { saving, comparisonSeries: mostExpensive.series };
+  }, [validResults]);
+
+  // XS以外のシリーズ一覧（差額グラフ用）
+  const otherSeriesList = useMemo(
+    () => validResults.filter(r => r.series !== 'XS').map(r => r.series),
+    [validResults],
+  );
+
+  // XSとの累積差額データ（プラス = XSの方がおトク）
+  const savingsChartData = useMemo(() => {
+    const xs = validResults.find(r => r.series === 'XS');
+    const others = validResults.filter(r => r.series !== 'XS');
+    if (!xs || others.length === 0) return [];
+
+    return Array.from({ length: years }, (_, i) => {
+      const year = i + 1;
+      const point: Record<string, number | string> = { year: `${year}年` };
+      others.forEach(other => {
+        point[other.series] = Math.round(
+          (other.unitPrice + other.annualElecCost * year) - (xs.unitPrice + xs.annualElecCost * year),
+        );
+      });
+      return point;
+    });
+  }, [validResults, years]);
+
+  // 最終年の最安と最高の開き（折れ線グラフの差額マーカー用）
+  const finalYearSpread = useMemo(() => {
+    if (validResults.length < 2) return null;
+    const totals = validResults.map(r => r.totalCost);
+    const min = Math.min(...totals);
+    const max = Math.max(...totals);
+    if (max - min <= 0) return null;
+    return { min, max, diff: max - min };
   }, [validResults]);
 
   // 使い方シーンの選択（運転時間・冷暖房比率も連動）
@@ -1018,7 +1115,7 @@ const App: React.FC = () => {
                               <CardContent>
                                 <Box sx={{ height: 300, width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                    <BarChart data={chartData} margin={{ top: 28, right: 30, left: 20, bottom: 5 }}>
                                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                       <XAxis dataKey="series" tick={{ fill: '#64748b', fontSize: 12 }} />
                                       <YAxis
@@ -1033,6 +1130,14 @@ const App: React.FC = () => {
                                             fill={seriesColors[entry.series as Series] || '#94a3b8'}
                                           />
                                         ))}
+                                        <LabelList
+                                          dataKey="cost"
+                                          position="top"
+                                          formatter={(value: number) => `${(value / 10000).toFixed(1)}万円`}
+                                          fill="#334155"
+                                          fontSize={13}
+                                          fontWeight={700}
+                                        />
                                       </Bar>
                                     </BarChart>
                                   </ResponsiveContainer>
@@ -1051,7 +1156,7 @@ const App: React.FC = () => {
                               <CardContent>
                                 <Box sx={{ height: 300, width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={lineChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                    <LineChart data={lineChartData} margin={{ top: 34, right: 30, left: 20, bottom: 5 }}>
                                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                       <XAxis
                                         dataKey="year"
@@ -1067,6 +1172,18 @@ const App: React.FC = () => {
                                         wrapperStyle={{ paddingTop: 10 }}
                                         formatter={(value) => <span style={{ color: '#64748b', fontSize: 12 }}>{value}</span>}
                                       />
+                                      {finalYearSpread && (
+                                        <ReferenceLine
+                                          segment={[
+                                            { x: `${years}年`, y: finalYearSpread.min },
+                                            { x: `${years}年`, y: finalYearSpread.max },
+                                          ]}
+                                          stroke="#dc2626"
+                                          strokeWidth={3}
+                                          strokeLinecap="round"
+                                          label={<GapLabel text={`${years}年で ${formatCurrency(finalYearSpread.diff)} の差！`} />}
+                                        />
+                                      )}
                                       {calculationResults.filter(r => r.unitPrice > 0).map((result) => (
                                         <Line
                                           key={result.series}
@@ -1088,6 +1205,71 @@ const App: React.FC = () => {
                               </CardContent>
                             </Card>
                           </Grid>
+
+                          {/* XSとの累積差額グラフ */}
+                          {savingsChartData.length > 0 && (
+                            <Grid size={12}>
+                              <Card>
+                                <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <MoneyIcon color="primary" />
+                                  <Box>
+                                    <Typography variant="h6" fontWeight="600">XSを選ぶと、いくらおトク？</Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                      同じ年数使った場合の総費用の差（0円より上 ＝ XSの方がおトク）
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                                <CardContent>
+                                  <Box sx={{ height: 280, width: '100%' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                      <BarChart data={savingsChartData} margin={{ top: 24, right: 30, left: 20, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} interval={years > 12 ? 1 : 0} />
+                                        <YAxis
+                                          tickFormatter={(value) => `${Math.round(value / 10000)}万`}
+                                          tick={{ fill: '#64748b', fontSize: 12 }}
+                                          domain={[(dataMin: number) => Math.min(dataMin, 0), (dataMax: number) => Math.max(dataMax, 0)]}
+                                        />
+                                        <Tooltip content={<SavingsTooltip />} />
+                                        <Legend
+                                          wrapperStyle={{ paddingTop: 10 }}
+                                          formatter={(value) => <span style={{ color: '#64748b', fontSize: 12 }}>{value}</span>}
+                                        />
+                                        <ReferenceLine y={0} stroke="#64748b" strokeWidth={1.5} label={{ value: '0円', position: 'right', fill: '#64748b', fontSize: 11 }} />
+                                        {xsCheapestFromYear !== null && xsCheapestFromYear > 0 && xsCheapestFromYear <= years && (
+                                          <ReferenceLine
+                                            x={`${xsCheapestFromYear}年`}
+                                            stroke="#2563eb"
+                                            strokeDasharray="4 4"
+                                            label={{
+                                              value: `${xsCheapestFromYear}年目からXSがおトク！`,
+                                              position: 'top',
+                                              fill: '#2563eb',
+                                              fontSize: 13,
+                                              fontWeight: 700,
+                                            }}
+                                          />
+                                        )}
+                                        {otherSeriesList.map(series => (
+                                          <Bar key={series} dataKey={series} name={`${series}と比べて`} fill={seriesColors[series]} isAnimationActive={false}>
+                                            {savingsChartData.map((entry, index) => (
+                                              <Cell
+                                                key={`savings-${series}-${index}`}
+                                                fill={(entry[series] as number) >= 0 ? seriesColors[series] : '#cbd5e1'}
+                                              />
+                                            ))}
+                                          </Bar>
+                                        ))}
+                                      </BarChart>
+                                    </ResponsiveContainer>
+                                  </Box>
+                                  <Typography variant="caption" color="text.secondary" display="block" textAlign="center" sx={{ mt: 1 }}>
+                                    グレーの棒 ＝ まだ本体の価格差を回収中 / 色付きの棒 ＝ XSの方がおトクになった金額
+                                  </Typography>
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          )}
                         </Grid>
                       )}
 
@@ -1524,7 +1706,7 @@ const App: React.FC = () => {
                               <CardContent>
                                 <Box sx={{ height: 280, width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                    <BarChart data={chartData} margin={{ top: 28, right: 30, left: 20, bottom: 5 }}>
                                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                       <XAxis dataKey="series" tick={{ fill: '#64748b', fontSize: 14 }} />
                                       <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}万`} tick={{ fill: '#64748b', fontSize: 14 }} />
@@ -1532,6 +1714,14 @@ const App: React.FC = () => {
                                         {chartData.map((entry, index) => (
                                           <Cell key={`cell-pdf-${index}`} fill={seriesColors[entry.series as Series] || '#94a3b8'} />
                                         ))}
+                                        <LabelList
+                                          dataKey="cost"
+                                          position="top"
+                                          formatter={(value: number) => `${(value / 10000).toFixed(1)}万円`}
+                                          fill="#334155"
+                                          fontSize={14}
+                                          fontWeight={700}
+                                        />
                                       </Bar>
                                     </BarChart>
                                   </ResponsiveContainer>
@@ -1547,11 +1737,23 @@ const App: React.FC = () => {
                               <CardContent>
                                 <Box sx={{ height: 280, width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={lineChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                    <LineChart data={lineChartData} margin={{ top: 36, right: 30, left: 20, bottom: 5 }}>
                                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                       <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 12 }} interval={1} />
                                       <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}万`} tick={{ fill: '#64748b', fontSize: 14 }} />
                                       <Legend wrapperStyle={{ paddingTop: 10 }} formatter={(value) => <span style={{ color: '#64748b', fontSize: 14 }}>{value}</span>} />
+                                      {finalYearSpread && (
+                                        <ReferenceLine
+                                          segment={[
+                                            { x: `${years}年`, y: finalYearSpread.min },
+                                            { x: `${years}年`, y: finalYearSpread.max },
+                                          ]}
+                                          stroke="#dc2626"
+                                          strokeWidth={3}
+                                          strokeLinecap="round"
+                                          label={<GapLabel text={`${years}年で ${formatCurrency(finalYearSpread.diff)} の差！`} fontSize={14} />}
+                                        />
+                                      )}
                                       {calculationResults.filter(r => r.unitPrice > 0).map((result) => (
                                         <Line key={`pdf-${result.series}`} type="monotone" dataKey={result.series} stroke={seriesColors[result.series]} strokeWidth={result.series === 'XS' ? 3 : 2} dot={{ r: result.series === 'XS' ? 4 : 3 }} isAnimationActive={false} />
                                       ))}
@@ -1564,6 +1766,64 @@ const App: React.FC = () => {
                               </CardContent>
                             </Card>
                           </Grid>
+
+                          {/* XSとの累積差額グラフ（PDF用） */}
+                          {savingsChartData.length > 0 && (
+                            <Grid size={12}>
+                              <Card>
+                                <Box sx={{ p: 2, borderBottom: '2px solid #e2e8f0' }}>
+                                  <Typography variant="h5" fontWeight="700">XSを選ぶと、いくらおトク？</Typography>
+                                  <Typography variant="body1" color="text.secondary">
+                                    同じ年数使った場合の総費用の差（0円より上 ＝ XSの方がおトク）
+                                  </Typography>
+                                </Box>
+                                <CardContent>
+                                  <Box sx={{ height: 280, width: '100%' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                      <BarChart data={savingsChartData} margin={{ top: 24, right: 30, left: 20, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 12 }} interval={years > 12 ? 1 : 0} />
+                                        <YAxis
+                                          tickFormatter={(value) => `${Math.round(value / 10000)}万`}
+                                          tick={{ fill: '#64748b', fontSize: 14 }}
+                                          domain={[(dataMin: number) => Math.min(dataMin, 0), (dataMax: number) => Math.max(dataMax, 0)]}
+                                        />
+                                        <Legend wrapperStyle={{ paddingTop: 10 }} formatter={(value) => <span style={{ color: '#64748b', fontSize: 14 }}>{value}</span>} />
+                                        <ReferenceLine y={0} stroke="#64748b" strokeWidth={1.5} label={{ value: '0円', position: 'right', fill: '#64748b', fontSize: 12 }} />
+                                        {xsCheapestFromYear !== null && xsCheapestFromYear > 0 && xsCheapestFromYear <= years && (
+                                          <ReferenceLine
+                                            x={`${xsCheapestFromYear}年`}
+                                            stroke="#2563eb"
+                                            strokeDasharray="4 4"
+                                            label={{
+                                              value: `${xsCheapestFromYear}年目からXSがおトク！`,
+                                              position: 'top',
+                                              fill: '#2563eb',
+                                              fontSize: 14,
+                                              fontWeight: 700,
+                                            }}
+                                          />
+                                        )}
+                                        {otherSeriesList.map(series => (
+                                          <Bar key={`pdf-savings-${series}`} dataKey={series} name={`${series}と比べて`} fill={seriesColors[series]} isAnimationActive={false}>
+                                            {savingsChartData.map((entry, index) => (
+                                              <Cell
+                                                key={`pdf-savings-${series}-${index}`}
+                                                fill={(entry[series] as number) >= 0 ? seriesColors[series] : '#cbd5e1'}
+                                              />
+                                            ))}
+                                          </Bar>
+                                        ))}
+                                      </BarChart>
+                                    </ResponsiveContainer>
+                                  </Box>
+                                  <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ mt: 1 }}>
+                                    グレーの棒 ＝ まだ本体の価格差を回収中 / 色付きの棒 ＝ XSの方がおトクになった金額
+                                  </Typography>
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          )}
                         </Grid>
                       )}
                     </Box>
