@@ -55,6 +55,9 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { acSpecs, kWhCostWithTax, type ACSpec } from './data/acSpecs';
 import { OldACComparison } from './components/OldACComparison';
+import { scenarios } from './data/scenarios';
+import { LifestyleBenefits } from './components/LifestyleBenefits';
+import type { ScenarioId } from './data/lifestyleBenefits';
 
 // 型定義
 type TatamiSize = keyof typeof acSpecs;
@@ -208,6 +211,7 @@ const App: React.FC = () => {
   const [dailyHours, setDailyHours] = useState(8);
   const [coolRatio, setCoolRatio] = useState(50);
   const [years, setYears] = useState(10);
+  const [selectedScenario, setSelectedScenario] = useState<ScenarioId | null>(null);
 
   // 出力用State
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
@@ -283,6 +287,7 @@ const App: React.FC = () => {
   const printRef = useRef<HTMLDivElement>(null);
   const printPage1Ref = useRef<HTMLDivElement>(null);
   const printPage2Ref = useRef<HTMLDivElement>(null);
+  const printPage3Ref = useRef<HTMLDivElement>(null);
 
   // 出力ダイアログを開く
   const openExportDialog = useCallback((type: 'jpg' | 'pdf') => {
@@ -355,6 +360,22 @@ const App: React.FC = () => {
       const imgX2 = margin + (pdfWidth - canvas2.width * ratio2) / 2;
       pdf.addImage(imgData2, 'JPEG', imgX2, margin, canvas2.width * ratio2, canvas2.height * ratio2);
 
+      // ページ3: 暮らしメリット（XSがある畳数のみ）
+      if (printPage3Ref.current) {
+        pdf.addPage();
+        const canvas3 = await html2canvas(printPage3Ref.current, {
+          scale: 3,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          scrollY: -window.scrollY,
+          windowHeight: printPage3Ref.current.scrollHeight,
+        });
+        const imgData3 = canvas3.toDataURL('image/jpeg', 0.95);
+        const ratio3 = Math.min(pdfWidth / canvas3.width, pdfHeight / canvas3.height);
+        const imgX3 = margin + (pdfWidth - canvas3.width * ratio3) / 2;
+        pdf.addImage(imgData3, 'JPEG', imgX3, margin, canvas3.width * ratio3, canvas3.height * ratio3);
+      }
+
       pdf.save(`${fileName}.pdf`);
     }
   }, [customerName, exportType, selectedTatami, years]);
@@ -423,6 +444,34 @@ const App: React.FC = () => {
 
     return initialDiff / annualSaving;
   }, [validResults]);
+
+  // XSと電気代が最も高いシリーズとの年間電気代差（暮らしメリット換算用）
+  const xsAnnualSaving = useMemo(() => {
+    const xs = validResults.find(r => r.series === 'XS');
+    const others = validResults.filter(r => r.series !== 'XS');
+    if (!xs || others.length === 0) return null;
+
+    const mostExpensive = others.reduce((max, current) =>
+      current.annualElecCost > max.annualElecCost ? current : max,
+    );
+    const saving = mostExpensive.annualElecCost - xs.annualElecCost;
+    if (saving <= 0) return null;
+
+    return { saving, comparisonSeries: mostExpensive.series };
+  }, [validResults]);
+
+  // 使い方シーンの選択（運転時間・冷暖房比率も連動）
+  const handleScenarioSelect = useCallback((id: ScenarioId) => {
+    if (selectedScenario === id) {
+      setSelectedScenario(null);
+      return;
+    }
+    const scenario = scenarios.find(s => s.id === id);
+    if (!scenario) return;
+    setSelectedScenario(id);
+    setDailyHours(scenario.dailyHours);
+    setCoolRatio(scenario.coolRatio);
+  }, [selectedScenario]);
 
   // 価格差を計算
   const priceDifference = useMemo(() => {
@@ -560,6 +609,35 @@ const App: React.FC = () => {
                                   比較条件
                                 </Typography>
                               </Stack>
+
+                              <Card variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
+                                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                                  <Stack spacing={1.25}>
+                                    <Stack direction="row" alignItems="center" spacing={1}>
+                                      <HomeIcon fontSize="small" color="action" />
+                                      <Typography variant="subtitle2" color="text.secondary" fontWeight="700">
+                                        使い方シーン（選ぶと時間・冷暖房比率も自動設定）
+                                      </Typography>
+                                    </Stack>
+                                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                                      {scenarios.map(scenario => (
+                                        <Chip
+                                          key={scenario.id}
+                                          label={`${scenario.desc} ${scenario.label}`}
+                                          size="small"
+                                          clickable
+                                          color={selectedScenario === scenario.id ? 'primary' : 'default'}
+                                          variant={selectedScenario === scenario.id ? 'filled' : 'outlined'}
+                                          onClick={() => handleScenarioSelect(scenario.id)}
+                                        />
+                                      ))}
+                                    </Stack>
+                                    <Typography variant="caption" color="text.secondary">
+                                      選んだシーンに合わせて「暮らしメリット」の表示も切り替わります
+                                    </Typography>
+                                  </Stack>
+                                </CardContent>
+                              </Card>
 
                               <Card variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
                                 <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
@@ -1308,6 +1386,18 @@ const App: React.FC = () => {
                           </Stack>
                         </Box>
                       </Card>
+
+                      {/* 暮らしメリット（電気代以外の訴求） */}
+                      {availableSeries.includes('XS') && (
+                        <Box sx={{ mt: 2 }}>
+                          <LifestyleBenefits
+                            years={years}
+                            scenarioId={selectedScenario}
+                            annualSaving={xsAnnualSaving?.saving ?? null}
+                            comparisonSeries={xsAnnualSaving?.comparisonSeries ?? null}
+                          />
+                        </Box>
+                      )}
                     </Box>
                     {/* JPG用印刷エリア終了 */}
 
@@ -1634,6 +1724,42 @@ const App: React.FC = () => {
                         )}
                       </Card>
                     </Box>
+
+                    {/* PDF用ページ3: 暮らしメリット（画面外に配置、大きな文字） */}
+                    {availableSeries.includes('XS') && (
+                      <Box
+                        ref={printPage3Ref}
+                        sx={{
+                          position: 'absolute',
+                          left: '-9999px',
+                          top: 0,
+                          width: '800px',
+                          bgcolor: 'white',
+                          p: 4,
+                        }}
+                      >
+                        <Box sx={{ mb: 3, pb: 2, borderBottom: '4px solid #ec4899' }}>
+                          {customerName && (
+                            <Typography variant="h4" fontWeight="700" color="text.primary" sx={{ mb: 1 }}>
+                              {customerName} さま
+                            </Typography>
+                          )}
+                          <Typography variant="h3" fontWeight="700" textAlign="center" sx={{ fontSize: '2.2rem', color: '#db2777' }}>
+                            XSシリーズで変わる、毎日の暮らし
+                          </Typography>
+                          <Typography variant="h6" color="text.secondary" textAlign="center" sx={{ mt: 1 }}>
+                            電気代だけじゃない、「家事ラク・空気キレイ・家族快適」のメリット
+                          </Typography>
+                        </Box>
+                        <LifestyleBenefits
+                          years={years}
+                          scenarioId={selectedScenario}
+                          annualSaving={xsAnnualSaving?.saving ?? null}
+                          comparisonSeries={xsAnnualSaving?.comparisonSeries ?? null}
+                          variant="print"
+                        />
+                      </Box>
+                    )}
                   </>
                 )}
 
