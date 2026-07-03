@@ -280,7 +280,7 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
           )}
 
           {proposalRows.length === 0 && (
-            <Alert severity="info">本体価格を入力すると、わかりやすい比較結果が表示されます。</Alert>
+            <Alert severity="info">チラシ価格がある畳数を選ぶと、比較結果が表示されます。</Alert>
           )}
 
           {proposalRows.length > 0 && oldACEstimate && (
