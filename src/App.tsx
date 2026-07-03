@@ -280,9 +280,6 @@ const App: React.FC = () => {
   const formatCurrency = (amount: number) =>
     `¥${new Intl.NumberFormat('ja-JP').format(Math.round(amount))}`;
 
-  const formatYearsLabel = (value: number) =>
-    value <= 0 ? 'すぐ' : `${value.toFixed(1)}年`;
-
   // 印刷用エリアの参照（JPG用：全体、PDF用：2ページ分割）
   const printRef = useRef<HTMLDivElement>(null);
   const printPage1Ref = useRef<HTMLDivElement>(null);
@@ -433,16 +430,29 @@ const App: React.FC = () => {
     );
   }, [validResults]);
 
-  const xsVsExPaybackYears = useMemo(() => {
+  // XSが全シリーズ中で総費用最安になる使用年数（0 = 最初から最安、null = 逆転しない）
+  const xsCheapestFromYear = useMemo(() => {
     const xs = validResults.find(r => r.series === 'XS');
-    const ex = validResults.find(r => r.series === 'EX');
-    if (!xs || !ex) return null;
+    const others = validResults.filter(r => r.series !== 'XS');
+    if (!xs || others.length === 0) return null;
 
-    const initialDiff = xs.unitPrice - ex.unitPrice;
-    const annualSaving = ex.annualElecCost - xs.annualElecCost;
-    if (initialDiff <= 0 || annualSaving <= 0) return null;
+    let requiredYears = 0;
+    for (const other of others) {
+      const initialDiff = xs.unitPrice - other.unitPrice;
+      if (initialDiff <= 0) continue;
+      const annualSaving = other.annualElecCost - xs.annualElecCost;
+      if (annualSaving <= 0) return null;
+      requiredYears = Math.max(requiredYears, Math.ceil(initialDiff / annualSaving));
+    }
+    return requiredYears;
+  }, [validResults]);
 
-    return initialDiff / annualSaving;
+  // 短期間で買い替えるなら本体価格が一番安いシリーズが有利
+  const lowestPriceSeries = useMemo(() => {
+    if (validResults.length === 0) return null;
+    return validResults.reduce((min, current) =>
+      current.unitPrice < min.unitPrice ? current : min,
+    ).series;
   }, [validResults]);
 
   // XSと電気代が最も高いシリーズとの年間電気代差（暮らしメリット換算用）
@@ -738,12 +748,19 @@ const App: React.FC = () => {
                                         min={0}
                                         max={100}
                                         step={5}
+                                        track={false}
                                         marks={[
                                           { value: 0, label: '暖房' },
                                           { value: 50, label: '半々' },
                                           { value: 100, label: '冷房' },
                                         ]}
                                         valueLabelDisplay="on"
+                                        sx={{
+                                          '& .MuiSlider-rail': {
+                                            opacity: 1,
+                                            background: 'linear-gradient(to right, #f97316, #3b82f6)',
+                                          },
+                                        }}
                                       />
                                     </Box>
                                     <Stack direction="row" spacing={1} justifyContent="center" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
@@ -774,56 +791,72 @@ const App: React.FC = () => {
                   <Card>
                     <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
                       <TrendingUpIcon color="primary" />
-                      <Typography variant="h6" fontWeight="700">結論サマリー</Typography>
+                      <Box>
+                        <Typography variant="h6" fontWeight="700">結果まとめ</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          この条件（{years}年・1日{dailyHours}時間）で計算した3つのポイント
+                        </Typography>
+                      </Box>
                     </Box>
                     <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
                       <Grid container spacing={2}>
                         <Grid size={{ xs: 12, md: 4 }}>
                           <Box sx={{ height: '100%', p: 2, border: '1px solid #dbe7fb', borderRadius: 2, bgcolor: '#f8fbff' }}>
-                            <Typography variant="body2" color="text.secondary" fontWeight="700">総費用最安</Typography>
-                            <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mt: 0.75 }}>
-                              <Typography variant="h5" fontWeight="800" color="primary.main">{cheapestResult.series}</Typography>
-                              <Typography variant="body2" color="text.secondary">{years}年総費用</Typography>
-                            </Stack>
+                            <Typography variant="body2" color="text.secondary" fontWeight="700">
+                              💰 {years}年間トータルで一番おトクなのは？
+                            </Typography>
+                            <Typography variant="h5" fontWeight="800" color="primary.main" sx={{ mt: 0.75 }}>
+                              {cheapestResult.series}シリーズ
+                            </Typography>
                             <Typography variant="h6" fontWeight="800">{formatCurrency(cheapestResult.totalCost)}</Typography>
-                            {priceDifference && (
-                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                                最高額との差は {formatCurrency(priceDifference.difference)}
-                              </Typography>
-                            )}
-                          </Box>
-                        </Grid>
-                        <Grid size={{ xs: 12, md: 4 }}>
-                          <Box sx={{ height: '100%', p: 2, border: '1px solid #dbe7fb', borderRadius: 2, bgcolor: '#f8fbff' }}>
-                            <Typography variant="body2" color="text.secondary" fontWeight="700">月々の電気代最安</Typography>
-                            <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mt: 0.75 }}>
-                              <Typography variant="h5" fontWeight="800" color="primary.main">{energyBestResult.series}</Typography>
-                              <Typography variant="body2" color="text.secondary">省エネ重視</Typography>
-                            </Stack>
-                            <Typography variant="h6" fontWeight="800">{formatCurrency(energyBestResult.annualElecCost / 12)} / 月</Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                              年間 {formatCurrency(energyBestResult.annualElecCost)}
+                              本体価格＋{years}年分の電気代の合計です。
+                              {priceDifference && (
+                                <>いちばん高い場合より {formatCurrency(priceDifference.difference)} おトク。</>
+                              )}
                             </Typography>
                           </Box>
                         </Grid>
                         <Grid size={{ xs: 12, md: 4 }}>
                           <Box sx={{ height: '100%', p: 2, border: '1px solid #dbe7fb', borderRadius: 2, bgcolor: '#f8fbff' }}>
                             <Typography variant="body2" color="text.secondary" fontWeight="700">
-                              {xsVsExPaybackYears ? 'XS差額回収目安' : '選び方'}
+                              ⚡ 毎月の電気代が一番安いのは？
                             </Typography>
                             <Typography variant="h5" fontWeight="800" color="primary.main" sx={{ mt: 0.75 }}>
-                              {xsVsExPaybackYears
-                                ? formatYearsLabel(xsVsExPaybackYears)
+                              {energyBestResult.series}シリーズ
+                            </Typography>
+                            <Typography variant="h6" fontWeight="800">月あたり 約{formatCurrency(energyBestResult.annualElecCost / 12)}</Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                              1年間だと 約{formatCurrency(energyBestResult.annualElecCost)}。使う年数が長いほど差が効いてきます。
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 4 }}>
+                          <Box sx={{ height: '100%', p: 2, border: '1px solid #dbe7fb', borderRadius: 2, bgcolor: '#f8fbff' }}>
+                            <Typography variant="body2" color="text.secondary" fontWeight="700">
+                              {xsCheapestFromYear !== null ? '⏳ 長く使うなら、どれがおトク？' : '📝 選び方のヒント'}
+                            </Typography>
+                            <Typography variant="h5" fontWeight="800" color="primary.main" sx={{ mt: 0.75 }}>
+                              {xsCheapestFromYear !== null
+                                ? xsCheapestFromYear === 0
+                                  ? '何年使ってもXSシリーズ'
+                                  : `${xsCheapestFromYear}年以上使うならXSシリーズ`
                                 : cheapestResult.series === energyBestResult.series
-                                  ? `${cheapestResult.series}のみ`
-                                  : `${cheapestResult.series} / ${energyBestResult.series}`}
+                                  ? `${cheapestResult.series}シリーズがおすすめ`
+                                  : `${cheapestResult.series} か ${energyBestResult.series}`}
                             </Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                              {xsVsExPaybackYears
-                                ? 'EXとの初期費用差を月々の電気代差で回収する目安です。'
+                              {xsCheapestFromYear !== null
+                                ? xsCheapestFromYear === 0
+                                  ? '本体価格と電気代を合わせると、最初からXSが一番おトクです。'
+                                  : `${lowestPriceSeries ? `それより短いなら${lowestPriceSeries}シリーズが有利。` : ''}${
+                                      xsCheapestFromYear <= 13
+                                        ? 'エアコンは平均13〜14年使われるので、平均的に使うご家庭ならXSが一番おトクです。'
+                                        : '短めの買い替え予定なら価格重視、長く快適に使うならXSがおすすめです。'
+                                    }`
                                 : cheapestResult.series === energyBestResult.series
-                                  ? '添付チラシで価格がある候補だけを表示しています。'
-                                : '費用重視と省エネ重視で候補を分けて提案できます。'}
+                                  ? 'トータル費用も毎月の電気代も、このシリーズが一番おトクです。'
+                                : '「トータルで安い方」か「毎月の電気代が安い方」か、重視するポイントで選べます。'}
                             </Typography>
                           </Box>
                         </Grid>
