@@ -57,6 +57,7 @@ import { acSpecs, kWhCostWithTax, type ACSpec } from './data/acSpecs';
 import { OldACComparison } from './components/OldACComparison';
 import { scenarios } from './data/scenarios';
 import { LifestyleBenefits } from './components/LifestyleBenefits';
+import { WinterPowerSection } from './components/WinterPowerSection';
 import type { ScenarioId } from './data/lifestyleBenefits';
 
 // 型定義
@@ -566,6 +567,20 @@ const App: React.FC = () => {
     if (max - min <= 0) return null;
     return { min, max, diff: max - min };
   }, [validResults]);
+
+  // 低温暖房能力・APF比較用データ
+  const winterPowerData = useMemo(() => {
+    const specs = acSpecs[selectedTatami] as Partial<Record<Series, ACSpec>>;
+    return availableSeries.map(series => {
+      const spec = specs[series]!;
+      return {
+        series,
+        model: spec.model,
+        lowTempHeatingKw: spec.lowTempHeatingKw,
+        apf: spec.apf,
+      };
+    });
+  }, [selectedTatami, availableSeries]);
 
   // 使い方シーンの選択（運転時間・冷暖房比率も連動）
   const handleScenarioSelect = useCallback((id: ScenarioId) => {
@@ -1273,6 +1288,13 @@ const App: React.FC = () => {
                         </Grid>
                       )}
 
+                      {/* 低温暖房能力・APF比較 */}
+                      {winterPowerData.length >= 2 && (
+                        <Box sx={{ mt: 2, mb: 2 }}>
+                          <WinterPowerSection data={winterPowerData} />
+                        </Box>
+                      )}
+
                       {/* シリーズ機能比較表 */}
                       <Card>
                         <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1853,6 +1875,12 @@ const App: React.FC = () => {
                           パナソニック エオリア {selectedTatami}畳用
                         </Typography>
                       </Box>
+
+                      {winterPowerData.length >= 2 && (
+                        <Box sx={{ mb: 3 }}>
+                          <WinterPowerSection data={winterPowerData} variant="print" />
+                        </Box>
+                      )}
 
                       <Card>
                         <TableContainer>
