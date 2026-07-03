@@ -286,7 +286,7 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
           {proposalRows.length > 0 && oldACEstimate && (
             <>
               <TableContainer component={Card} variant="outlined">
-                <Table size="small">
+                <Table size="small" sx={{ display: { xs: 'none', md: 'table' } }}>
                   <TableHead>
                     <TableRow sx={{ bgcolor: '#f8fafc' }}>
                       <TableCell sx={{ fontWeight: 700 }}>プラン</TableCell>
@@ -300,6 +300,7 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
                     {proposalRows.map((row) => {
                       const isRecommended = recommendationSeries === row.series;
                       const isCheapest = cheapestForYears?.series === row.series;
+                      const recommendationLabel = isRecommended && isCheapest ? 'おすすめ' : '機能重視';
                       const diffLabel = row.totalDiffVsOld >= 0
                         ? `${formatCurrency(row.totalDiffVsOld)} お得`
                         : `${formatCurrency(Math.abs(row.totalDiffVsOld))} 高い`;
@@ -311,7 +312,7 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
                               <Typography fontWeight={700} sx={{ color: seriesMeta[row.series].color }}>
                                 {seriesMeta[row.series].label}
                               </Typography>
-                              {isRecommended && <Chip label="おすすめ" color="primary" size="small" />}
+                              {isRecommended && <Chip label={recommendationLabel} color="primary" size="small" />}
                               {isCheapest && <Chip label="最安" size="small" />}
                             </Stack>
                           </TableCell>
@@ -332,12 +333,65 @@ export const OldACComparison: React.FC<OldACComparisonProps> = ({
                     })}
                   </TableBody>
                 </Table>
+                <Box sx={{ display: { xs: 'block', md: 'none' }, p: 1.5 }}>
+                  <Stack spacing={1.5}>
+                    {proposalRows.map((row) => {
+                      const isRecommended = recommendationSeries === row.series;
+                      const isCheapest = cheapestForYears?.series === row.series;
+                      const recommendationLabel = isRecommended && isCheapest ? 'おすすめ' : '機能重視';
+                      const diffLabel = row.totalDiffVsOld >= 0
+                        ? `${formatCurrency(row.totalDiffVsOld)} お得`
+                        : `${formatCurrency(Math.abs(row.totalDiffVsOld))} 高い`;
+
+                      return (
+                        <Box
+                          key={`mobile-old-${row.series}`}
+                          sx={{
+                            p: 1.5,
+                            border: '1px solid #dbe7fb',
+                            borderRadius: 2,
+                            bgcolor: isRecommended ? seriesMeta[row.series].bg : '#ffffff',
+                          }}
+                        >
+                          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                            <Box>
+                              <Typography fontWeight={800} sx={{ color: seriesMeta[row.series].color }}>
+                                {seriesMeta[row.series].label}
+                              </Typography>
+                              <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" sx={{ mt: 0.75 }}>
+                                {isRecommended && <Chip label={recommendationLabel} color="primary" size="small" />}
+                                {isCheapest && <Chip label="最安" size="small" />}
+                              </Stack>
+                            </Box>
+                            <Typography fontWeight={800}>{formatCurrency(row.totalCost)}</Typography>
+                          </Stack>
+                          <Grid container spacing={1.25} sx={{ mt: 1 }}>
+                            <Grid size={6}>
+                              <Typography variant="caption" color="text.secondary">最初にかかる費用</Typography>
+                              <Typography fontWeight={700}>{formatCurrency(row.initialCost)}</Typography>
+                            </Grid>
+                            <Grid size={6}>
+                              <Typography variant="caption" color="text.secondary">月々の電気代</Typography>
+                              <Typography fontWeight={700}>{formatCurrency(row.monthlyElecCost)}</Typography>
+                            </Grid>
+                            <Grid size={12}>
+                              <Typography variant="caption" color="text.secondary">今の機種との差</Typography>
+                              <Typography color={row.totalDiffVsOld >= 0 ? 'success.main' : 'text.secondary'} fontWeight={700}>
+                                {diffLabel}
+                              </Typography>
+                            </Grid>
+                          </Grid>
+                        </Box>
+                      );
+                    })}
+                  </Stack>
+                </Box>
               </TableContainer>
 
               <Card variant="outlined" sx={{ borderColor: '#bfdbfe', bgcolor: '#eff6ff' }}>
                 <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                   <Stack spacing={1}>
-                    <Typography fontWeight={700} color="primary.main">おすすめ理由</Typography>
+                    <Typography fontWeight={700} color="primary.main">提案理由</Typography>
                     <Typography variant="body2" color="text.secondary">
                       {recommendationNote}
                     </Typography>

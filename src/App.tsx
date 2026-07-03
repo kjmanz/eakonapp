@@ -54,7 +54,7 @@ import {
 } from 'recharts';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { acSpecs, kWhCostWithTax } from './data/acSpecs';
+import { acSpecs, kWhCostWithTax, type ACSpec } from './data/acSpecs';
 import { OldACComparison } from './components/OldACComparison';
 
 // 型定義
@@ -84,8 +84,6 @@ const seriesFeatures = {
     color: '#2563eb',
     highlight: true,
     features: {
-      '省エネ達成率（2027年度）': '106%',
-      'APF（通年エネルギー消費効率）': '7.0',
       'ナノイーX': '48兆',
       'エネチャージ': true,
       'AI快適おまかせ': true,
@@ -104,8 +102,6 @@ const seriesFeatures = {
     color: '#64748b',
     highlight: false,
     features: {
-      '省エネ達成率（2027年度）': '92%',
-      'APF（通年エネルギー消費効率）': '6.1',
       'ナノイーX': '48兆',
       'エネチャージ': false,
       'AI快適おまかせ': 'AIモード',
@@ -124,8 +120,6 @@ const seriesFeatures = {
     color: '#94a3b8',
     highlight: false,
     features: {
-      '省エネ達成率（2027年度）': '87%',
-      'APF（通年エネルギー消費効率）': '5.8',
       'ナノイーX': '9.6兆',
       'エネチャージ': false,
       'AI快適おまかせ': false,
@@ -141,8 +135,11 @@ const seriesFeatures = {
 };
 
 const featureLabels = [
+  '品番',
   '省エネ達成率（2027年度）',
   'APF（通年エネルギー消費効率）',
+  '期間消費電力量（JIS C 9612:2013）',
+  '低温暖房能力（外気温2℃時）',
   'ナノイーX',
   'エネチャージ',
   'AI快適おまかせ',
@@ -154,6 +151,43 @@ const featureLabels = [
   'カビみはり（お部屋）',
   '耐塩害仕様（JRA9002）',
 ];
+
+const getSeriesFeatureValue = (feature: string, series: Series, spec?: ACSpec): string | boolean => {
+  if (spec) {
+    if (feature === '品番') return spec.model;
+    if (feature === '省エネ達成率（2027年度）') return `${spec.energySavingRate}%`;
+    if (feature === 'APF（通年エネルギー消費効率）') return spec.apf.toFixed(1);
+    if (feature === '期間消費電力量（JIS C 9612:2013）') {
+      return `${new Intl.NumberFormat('ja-JP').format(spec.periodKWh)}kWh`;
+    }
+    if (feature === '低温暖房能力（外気温2℃時）') {
+      return `${spec.lowTempHeatingKw.toFixed(1)}kW`;
+    }
+  }
+
+  const staticFeatures = seriesFeatures[series].features as Record<string, string | boolean>;
+  return staticFeatures[feature] ?? '-';
+};
+
+const renderFeatureValue = (value: string | boolean) => {
+  if (typeof value === 'boolean') {
+    return value ? (
+      <CheckIcon sx={{ color: '#22c55e' }} />
+    ) : (
+      <CancelIcon sx={{ color: '#d1d5db' }} />
+    );
+  }
+
+  return (
+    <Typography
+      variant="body2"
+      fontWeight={value !== '-' ? 600 : 400}
+      color={value !== '-' ? 'text.primary' : 'text.disabled'}
+    >
+      {value}
+    </Typography>
+  );
+};
 
 // シリーズカラー
 const seriesColors: Record<Series, string> = {
@@ -194,10 +228,10 @@ const App: React.FC = () => {
     const annualElecYen = (coolW: number, heatW: number) =>
       weightedKWh(coolW, heatW) * dailyHours * 365 * kWhCost;
 
-    const specs = acSpecs[selectedTatami] as Record<string, { coolW: number; heatW: number }>;
+    const specs = acSpecs[selectedTatami] as Partial<Record<Series, ACSpec>>;
     const parsedInstallCost = parseInt(installCost, 10) || 0;
     return availableSeries.map(series => {
-      const spec = specs[series];
+      const spec = specs[series]!;
       const unitPrice = parseInt(unitPrices[series], 10) || 0;
       const annualCost = annualElecYen(spec.coolW, spec.heatW);
       const totalElecCost = annualCost * years;
@@ -282,6 +316,9 @@ const App: React.FC = () => {
 
   const formatCurrency = (amount: number) =>
     `¥${new Intl.NumberFormat('ja-JP').format(Math.round(amount))}`;
+
+  const formatYearsLabel = (value: number) =>
+    value <= 0 ? 'すぐ' : `${value.toFixed(1)}年`;
 
   // 印刷用エリアの参照（JPG用：全体、PDF用：2ページ分割）
   const printRef = useRef<HTMLDivElement>(null);
@@ -397,9 +434,39 @@ const App: React.FC = () => {
     return null;
   };
 
+  const validResults = useMemo(
+    () => calculationResults.filter(r => r.unitPrice > 0),
+    [calculationResults],
+  );
+
+  const cheapestResult = useMemo(() => {
+    if (validResults.length === 0) return null;
+    return validResults.reduce((min, current) =>
+      current.totalCost < min.totalCost ? current : min,
+    );
+  }, [validResults]);
+
+  const energyBestResult = useMemo(() => {
+    if (validResults.length === 0) return null;
+    return validResults.reduce((min, current) =>
+      current.annualElecCost < min.annualElecCost ? current : min,
+    );
+  }, [validResults]);
+
+  const xsVsExPaybackYears = useMemo(() => {
+    const xs = validResults.find(r => r.series === 'XS');
+    const ex = validResults.find(r => r.series === 'EX');
+    if (!xs || !ex) return null;
+
+    const initialDiff = xs.unitPrice + xs.installCost - (ex.unitPrice + ex.installCost);
+    const annualSaving = ex.annualElecCost - xs.annualElecCost;
+    if (initialDiff <= 0 || annualSaving <= 0) return null;
+
+    return initialDiff / annualSaving;
+  }, [validResults]);
+
   // 価格差を計算
   const priceDifference = useMemo(() => {
-    const validResults = calculationResults.filter(r => r.unitPrice > 0);
     if (validResults.length < 2) return null;
 
     const sorted = [...validResults].sort((a, b) => a.totalCost - b.totalCost);
@@ -411,7 +478,7 @@ const App: React.FC = () => {
       mostExpensive: mostExpensive.series,
       difference: mostExpensive.totalCost - cheapest.totalCost,
     };
-  }, [calculationResults]);
+  }, [validResults]);
 
   return (
     <ThemeProvider theme={theme}>
@@ -431,14 +498,25 @@ const App: React.FC = () => {
         >
           <Toolbar>
             <Container maxWidth="lg" sx={{ display: 'flex', justifyContent: 'center' }}>
-              <Typography variant="h5" component="h1" sx={{ fontWeight: 700, color: 'text.primary', letterSpacing: '0.02em' }}>
+              <Typography
+                variant="h5"
+                component="h1"
+                sx={{
+                  fontWeight: 700,
+                  color: 'text.primary',
+                  letterSpacing: 0,
+                  textAlign: 'center',
+                  fontSize: { xs: '1.32rem', sm: '1.5rem' },
+                  lineHeight: 1.35,
+                }}
+              >
                 エアコン総費用シミュレーター
               </Typography>
             </Container>
           </Toolbar>
         </AppBar>
 
-        <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Container maxWidth="lg" sx={{ py: { xs: 2.5, md: 4 } }}>
           <Stack spacing={3}>
                 {/* 設定パネル */}
                 <Card>
@@ -446,7 +524,7 @@ const App: React.FC = () => {
                     <SettingsIcon color="primary" />
                     <Typography variant="h6" fontWeight="600">基本設定</Typography>
                   </Box>
-                  <CardContent sx={{ p: 3 }}>
+                  <CardContent sx={{ p: { xs: 2, md: 3 } }}>
                     <Grid container spacing={3}>
                       <Grid size={{ xs: 12, md: 5 }}>
                         <Stack spacing={2}>
@@ -478,9 +556,6 @@ const App: React.FC = () => {
                                   <MoneyIcon fontSize="small" color="action" />
                                   <Typography variant="subtitle1" fontWeight={700}>本体価格</Typography>
                                 </Stack>
-                                <Typography variant="body2" color="text.secondary">
-                                  数字のみ入力できます。入力中はそのまま、入力後に自動で3桁区切り表示します。
-                                </Typography>
                                 <Stack spacing={1.25}>
                                   {availableSeries.map(series => (
                                     <TextField
@@ -515,9 +590,6 @@ const App: React.FC = () => {
                                   <SettingsIcon fontSize="small" color="action" />
                                   <Typography variant="subtitle1" fontWeight={700}>標準工事費</Typography>
                                 </Stack>
-                                <Typography variant="body2" color="text.secondary">
-                                  全シリーズ共通の標準工事費です。未入力は0円扱いです。
-                                </Typography>
                                 <TextField
                                   label="標準工事費"
                                   value={getDisplayInstallCost()}
@@ -684,8 +756,64 @@ const App: React.FC = () => {
                   </CardContent>
                 </Card>
 
+                {validResults.length > 0 && cheapestResult && energyBestResult && (
+                  <Card>
+                    <Box sx={{ p: 2, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <TrendingUpIcon color="primary" />
+                      <Typography variant="h6" fontWeight="700">結論サマリー</Typography>
+                    </Box>
+                    <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+                      <Grid container spacing={2}>
+                        <Grid size={{ xs: 12, md: 4 }}>
+                          <Box sx={{ height: '100%', p: 2, border: '1px solid #dbe7fb', borderRadius: 2, bgcolor: '#f8fbff' }}>
+                            <Typography variant="body2" color="text.secondary" fontWeight="700">総費用最安</Typography>
+                            <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mt: 0.75 }}>
+                              <Typography variant="h5" fontWeight="800" color="primary.main">{cheapestResult.series}</Typography>
+                              <Typography variant="body2" color="text.secondary">{years}年総費用</Typography>
+                            </Stack>
+                            <Typography variant="h6" fontWeight="800">{formatCurrency(cheapestResult.totalCost)}</Typography>
+                            {priceDifference && (
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                                最高額との差は {formatCurrency(priceDifference.difference)}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 4 }}>
+                          <Box sx={{ height: '100%', p: 2, border: '1px solid #dbe7fb', borderRadius: 2, bgcolor: '#f8fbff' }}>
+                            <Typography variant="body2" color="text.secondary" fontWeight="700">月々の電気代最安</Typography>
+                            <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mt: 0.75 }}>
+                              <Typography variant="h5" fontWeight="800" color="primary.main">{energyBestResult.series}</Typography>
+                              <Typography variant="body2" color="text.secondary">省エネ重視</Typography>
+                            </Stack>
+                            <Typography variant="h6" fontWeight="800">{formatCurrency(energyBestResult.annualElecCost / 12)} / 月</Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                              年間 {formatCurrency(energyBestResult.annualElecCost)}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 4 }}>
+                          <Box sx={{ height: '100%', p: 2, border: '1px solid #dbe7fb', borderRadius: 2, bgcolor: '#f8fbff' }}>
+                            <Typography variant="body2" color="text.secondary" fontWeight="700">
+                              {xsVsExPaybackYears ? 'XS差額回収目安' : '選び方'}
+                            </Typography>
+                            <Typography variant="h5" fontWeight="800" color="primary.main" sx={{ mt: 0.75 }}>
+                              {xsVsExPaybackYears ? formatYearsLabel(xsVsExPaybackYears) : `${cheapestResult.series} / ${energyBestResult.series}`}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                              {xsVsExPaybackYears
+                                ? 'EXとの初期費用差を月々の電気代差で回収する目安です。'
+                                : '費用重視と省エネ重視で候補を分けて提案できます。'}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* 結果表示 */}
-                {calculationResults.some(r => r.unitPrice > 0) && (
+                {validResults.length > 0 && (
                   <>
                     {/* 出力ボタン */}
                     <Stack direction="row" spacing={1.5} justifyContent="flex-end" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
@@ -694,6 +822,7 @@ const App: React.FC = () => {
                         startIcon={<ImageIcon />}
                         onClick={() => openExportDialog('jpg')}
                         size="medium"
+                        sx={{ width: { xs: '100%', sm: 'auto' } }}
                       >
                         JPGで保存
                       </Button>
@@ -702,6 +831,7 @@ const App: React.FC = () => {
                         startIcon={<PdfIcon />}
                         onClick={() => openExportDialog('pdf')}
                         size="medium"
+                        sx={{ width: { xs: '100%', sm: 'auto' } }}
                       >
                         PDFで保存
                       </Button>
@@ -736,7 +866,7 @@ const App: React.FC = () => {
                             本体価格 + 工事費 + {years}年間の電気代
                           </Typography>
                         </Box>
-                        <TableContainer>
+                        <TableContainer sx={{ display: { xs: 'none', md: 'block' } }}>
                           <Table>
                             <TableHead>
                               <TableRow sx={{ bgcolor: '#f8fafc' }}>
@@ -773,6 +903,51 @@ const App: React.FC = () => {
                             </TableBody>
                           </Table>
                         </TableContainer>
+                        <Box sx={{ display: { xs: 'block', md: 'none' }, p: 2 }}>
+                          <Stack spacing={1.5}>
+                            {validResults.map((result) => (
+                              <Box
+                                key={`mobile-cost-${result.series}`}
+                                sx={{
+                                  p: 1.5,
+                                  border: '1px solid #dbe7fb',
+                                  borderRadius: 2,
+                                  bgcolor: cheapestSeries === result.series ? '#eff6ff' : '#ffffff',
+                                }}
+                              >
+                                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                                  <Stack direction="row" spacing={1} alignItems="center">
+                                    <Typography variant="h6" fontWeight="800">{result.series}</Typography>
+                                    {cheapestSeries === result.series && (
+                                      <Chip label="最安" color="primary" size="small" />
+                                    )}
+                                  </Stack>
+                                  <Typography variant="h6" fontWeight="800" color="primary.main">
+                                    {formatCurrency(result.totalCost)}
+                                  </Typography>
+                                </Stack>
+                                <Grid container spacing={1.25} sx={{ mt: 1 }}>
+                                  <Grid size={6}>
+                                    <Typography variant="caption" color="text.secondary">本体価格</Typography>
+                                    <Typography fontWeight="700">{formatCurrency(result.unitPrice)}</Typography>
+                                  </Grid>
+                                  <Grid size={6}>
+                                    <Typography variant="caption" color="text.secondary">工事費</Typography>
+                                    <Typography fontWeight="700">{formatCurrency(result.installCost)}</Typography>
+                                  </Grid>
+                                  <Grid size={6}>
+                                    <Typography variant="caption" color="text.secondary">年間電気代</Typography>
+                                    <Typography fontWeight="700">{formatCurrency(result.annualElecCost)}</Typography>
+                                  </Grid>
+                                  <Grid size={6}>
+                                    <Typography variant="caption" color="text.secondary">{years}年電気代</Typography>
+                                    <Typography fontWeight="700">{formatCurrency(result.totalElecCost)}</Typography>
+                                  </Grid>
+                                </Grid>
+                              </Box>
+                            ))}
+                          </Stack>
+                        </Box>
                         {priceDifference && (
                           <Box sx={{ p: 2, bgcolor: '#f0f9ff', borderTop: '1px solid #e2e8f0' }}>
                             <Typography variant="body2" color="primary.main" fontWeight="600" textAlign="center">
@@ -804,7 +979,7 @@ const App: React.FC = () => {
                                         tick={{ fill: '#64748b', fontSize: 12 }}
                                       />
                                       <Tooltip content={<CustomTooltip />} />
-                                      <Bar dataKey="cost" radius={[6, 6, 0, 0]}>
+                                      <Bar dataKey="cost" radius={[6, 6, 0, 0]} isAnimationActive={false}>
                                         {chartData.map((entry, index) => (
                                           <Cell
                                             key={`cell-${index}`}
@@ -854,6 +1029,7 @@ const App: React.FC = () => {
                                           strokeWidth={result.series === 'XS' ? 3 : 2}
                                           dot={{ r: result.series === 'XS' ? 4 : 3 }}
                                           activeDot={{ r: 6 }}
+                                          isAnimationActive={false}
                                         />
                                       ))}
                                     </LineChart>
@@ -877,13 +1053,14 @@ const App: React.FC = () => {
                             ※パナソニック公式情報に基づく
                           </Typography>
                         </Box>
-                        <TableContainer>
+                        <TableContainer sx={{ display: { xs: 'none', md: 'block' } }}>
                           <Table size="small">
                             <TableHead>
                               <TableRow sx={{ bgcolor: '#f8fafc' }}>
                                 <TableCell sx={{ fontWeight: 600, minWidth: 160 }}>機能</TableCell>
                                 {availableSeries.map(series => {
                                   const info = seriesFeatures[series];
+                                  const spec = (acSpecs[selectedTatami] as Partial<Record<Series, ACSpec>>)[series];
                                   return (
                                     <TableCell
                                       key={series}
@@ -898,7 +1075,7 @@ const App: React.FC = () => {
                                         {info.highlight && (
                                           <Chip
                                             icon={<StarIcon sx={{ fontSize: 14 }} />}
-                                            label="おすすめ"
+                                            label="省エネ重視"
                                             size="small"
                                             color="primary"
                                             sx={{ mb: 0.5 }}
@@ -910,6 +1087,11 @@ const App: React.FC = () => {
                                         <Typography variant="caption" color="text.secondary">
                                           {info.grade}
                                         </Typography>
+                                        {spec && (
+                                          <Typography variant="caption" color="text.secondary">
+                                            {spec.model}
+                                          </Typography>
+                                        )}
                                       </Stack>
                                     </TableCell>
                                   );
@@ -927,10 +1109,10 @@ const App: React.FC = () => {
                                 </TableCell>
                                 {availableSeries.map(series => {
                                   const info = seriesFeatures[series];
-                                  const specs = acSpecs[selectedTatami] as Record<string, { coolW: number; heatW: number }>;
-                                  const spec = specs[series];
+                                  const specs = acSpecs[selectedTatami] as Partial<Record<Series, ACSpec>>;
+                                  const spec = specs[series]!;
                                   const isLowest = availableSeries.every(s => {
-                                    const otherSpec = specs[s];
+                                    const otherSpec = specs[s]!;
                                     return spec.coolW <= otherSpec.coolW;
                                   });
                                   return (
@@ -1064,7 +1246,8 @@ const App: React.FC = () => {
                                   <TableCell sx={{ fontWeight: 500 }}>{feature}</TableCell>
                                   {availableSeries.map(series => {
                                     const info = seriesFeatures[series];
-                                    const value = info.features[feature as keyof typeof info.features];
+                                    const specs = acSpecs[selectedTatami] as Partial<Record<Series, ACSpec>>;
+                                    const value = getSeriesFeatureValue(feature, series, specs[series]);
                                     return (
                                       <TableCell
                                         key={series}
@@ -1077,21 +1260,7 @@ const App: React.FC = () => {
                                           borderRight: info.highlight ? '2px solid #2563eb' : 'none',
                                         }}
                                       >
-                                        {typeof value === 'boolean' ? (
-                                          value ? (
-                                            <CheckIcon sx={{ color: '#22c55e' }} />
-                                          ) : (
-                                            <CancelIcon sx={{ color: '#d1d5db' }} />
-                                          )
-                                        ) : (
-                                          <Typography
-                                            variant="body2"
-                                            fontWeight={value !== '-' ? 600 : 400}
-                                            color={value !== '-' ? 'text.primary' : 'text.disabled'}
-                                          >
-                                            {value}
-                                          </Typography>
-                                        )}
+                                        {renderFeatureValue(value)}
                                       </TableCell>
                                     );
                                   })}
@@ -1116,7 +1285,7 @@ const App: React.FC = () => {
                                         <StarIcon sx={{ color: '#2563eb', mt: 0.25 }} />
                                         <Box>
                                           <Typography fontWeight="700" color="primary.main" gutterBottom>
-                                            XSシリーズがおすすめの理由
+                                            XSシリーズが省エネ重視で選ばれる理由
                                           </Typography>
                                           <Typography variant="body2" color="text.secondary">
                                             • <strong>省エネ性能No.1</strong> - 消費電力が最も低く、長期間使うほど電気代で差がつきます<br />
@@ -1134,6 +1303,103 @@ const App: React.FC = () => {
                             </TableBody>
                           </Table>
                         </TableContainer>
+                        <Box sx={{ display: { xs: 'block', md: 'none' }, p: 2 }}>
+                          <Stack spacing={1.5}>
+                            {availableSeries.map(series => {
+                              const info = seriesFeatures[series];
+                              const specs = acSpecs[selectedTatami] as Partial<Record<Series, ACSpec>>;
+                              const spec = specs[series]!;
+                              const result = calculationResults.find(r => r.series === series);
+
+                              return (
+                                <Box
+                                  key={`mobile-feature-${series}`}
+                                  sx={{
+                                    border: '1px solid #dbe7fb',
+                                    borderRadius: 2,
+                                    overflow: 'hidden',
+                                    bgcolor: info.highlight ? '#eff6ff' : '#ffffff',
+                                  }}
+                                >
+                                  <Box sx={{ p: 1.5, borderBottom: '1px solid #dbe7fb' }}>
+                                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                                      <Box>
+                                        <Typography variant="h6" fontWeight="800" color={info.color}>
+                                          {info.name}
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">{info.grade}</Typography>
+                                        <Typography variant="body2" color="text.secondary">{spec.model}</Typography>
+                                      </Box>
+                                      <Stack spacing={0.5} alignItems="flex-end">
+                                        {info.highlight && <Chip label="省エネ重視" size="small" color="primary" />}
+                                        {cheapestSeries === series && <Chip label="最安" size="small" color="success" />}
+                                      </Stack>
+                                    </Stack>
+                                  </Box>
+                                  <Box sx={{ p: 1.5 }}>
+                                    <Grid container spacing={1.25}>
+                                      <Grid size={6}>
+                                        <Typography variant="caption" color="text.secondary">冷房</Typography>
+                                        <Typography fontWeight="700">{spec.coolW}W</Typography>
+                                      </Grid>
+                                      <Grid size={6}>
+                                        <Typography variant="caption" color="text.secondary">暖房</Typography>
+                                        <Typography fontWeight="700">{spec.heatW}W</Typography>
+                                      </Grid>
+                                      <Grid size={6}>
+                                        <Typography variant="caption" color="text.secondary">{years}年総費用</Typography>
+                                        <Typography fontWeight="800" color="primary.main">
+                                          {result && result.unitPrice > 0 ? formatCurrency(result.totalCost) : '-'}
+                                        </Typography>
+                                      </Grid>
+                                      <Grid size={6}>
+                                        <Typography variant="caption" color="text.secondary">APF</Typography>
+                                        <Typography fontWeight="700">{spec.apf.toFixed(1)}</Typography>
+                                      </Grid>
+                                    </Grid>
+                                    <Stack spacing={0.75} sx={{ mt: 1.5 }}>
+                                      {featureLabels.filter(feature => feature !== '品番' && feature !== 'APF（通年エネルギー消費効率）').map(feature => {
+                                        const value = getSeriesFeatureValue(feature, series, spec);
+                                        return (
+                                          <Stack
+                                            key={`mobile-${series}-${feature}`}
+                                            direction="row"
+                                            justifyContent="space-between"
+                                            alignItems="center"
+                                            spacing={1.5}
+                                            sx={{ py: 0.75, borderTop: '1px solid #e2e8f0' }}
+                                          >
+                                            <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0 }}>
+                                              {feature}
+                                            </Typography>
+                                            <Box sx={{ textAlign: 'right', flexShrink: 0, maxWidth: '50%' }}>
+                                              {renderFeatureValue(value)}
+                                            </Box>
+                                          </Stack>
+                                        );
+                                      })}
+                                    </Stack>
+                                  </Box>
+                                </Box>
+                              );
+                            })}
+                            {availableSeries.includes('XS') && (
+                              <Box sx={{ p: 1.5, bgcolor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 2 }}>
+                                <Stack direction="row" alignItems="flex-start" spacing={1}>
+                                  <StarIcon sx={{ color: '#2563eb', mt: 0.25 }} />
+                                  <Box>
+                                    <Typography fontWeight="700" color="primary.main">
+                                      XSシリーズが省エネ重視で選ばれる理由
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                      電気代を抑えやすく、ナノイーX 48兆、エネチャージ、AI快適おまかせなど快適機能も充実しています。
+                                    </Typography>
+                                  </Box>
+                                </Stack>
+                              </Box>
+                            )}
+                          </Stack>
+                        </Box>
                       </Card>
                     </Box>
                     {/* JPG用印刷エリア終了 */}
@@ -1234,7 +1500,7 @@ const App: React.FC = () => {
                                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                       <XAxis dataKey="series" tick={{ fill: '#64748b', fontSize: 14 }} />
                                       <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}万`} tick={{ fill: '#64748b', fontSize: 14 }} />
-                                      <Bar dataKey="cost" radius={[6, 6, 0, 0]}>
+                                      <Bar dataKey="cost" radius={[6, 6, 0, 0]} isAnimationActive={false}>
                                         {chartData.map((entry, index) => (
                                           <Cell key={`cell-pdf-${index}`} fill={seriesColors[entry.series as Series] || '#94a3b8'} />
                                         ))}
@@ -1259,7 +1525,7 @@ const App: React.FC = () => {
                                       <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}万`} tick={{ fill: '#64748b', fontSize: 14 }} />
                                       <Legend wrapperStyle={{ paddingTop: 10 }} formatter={(value) => <span style={{ color: '#64748b', fontSize: 14 }}>{value}</span>} />
                                       {calculationResults.filter(r => r.unitPrice > 0).map((result) => (
-                                        <Line key={`pdf-${result.series}`} type="monotone" dataKey={result.series} stroke={seriesColors[result.series]} strokeWidth={result.series === 'XS' ? 3 : 2} dot={{ r: result.series === 'XS' ? 4 : 3 }} />
+                                        <Line key={`pdf-${result.series}`} type="monotone" dataKey={result.series} stroke={seriesColors[result.series]} strokeWidth={result.series === 'XS' ? 3 : 2} dot={{ r: result.series === 'XS' ? 4 : 3 }} isAnimationActive={false} />
                                       ))}
                                     </LineChart>
                                   </ResponsiveContainer>
@@ -1308,6 +1574,7 @@ const App: React.FC = () => {
                                 <TableCell sx={{ fontWeight: 700, fontSize: '1.1rem', minWidth: 180 }}>機能</TableCell>
                                 {availableSeries.map(series => {
                                   const info = seriesFeatures[series];
+                                  const spec = (acSpecs[selectedTatami] as Partial<Record<Series, ACSpec>>)[series];
                                   return (
                                     <TableCell
                                       key={`pdf-head-${series}`}
@@ -1319,9 +1586,12 @@ const App: React.FC = () => {
                                       }}
                                     >
                                       <Stack spacing={0.5} alignItems="center">
-                                        {info.highlight && <Chip icon={<StarIcon sx={{ fontSize: 16 }} />} label="おすすめ" size="small" color="primary" />}
+                                        {info.highlight && <Chip icon={<StarIcon sx={{ fontSize: 16 }} />} label="省エネ重視" size="small" color="primary" />}
                                         <Typography fontWeight="700" fontSize="1.2rem" color={info.color}>{info.name}</Typography>
                                         <Typography variant="body2" color="text.secondary">{info.grade}</Typography>
+                                        {spec && (
+                                          <Typography variant="body2" color="text.secondary">{spec.model}</Typography>
+                                        )}
                                       </Stack>
                                     </TableCell>
                                   );
@@ -1334,8 +1604,8 @@ const App: React.FC = () => {
                                 <TableCell sx={{ fontWeight: 700, fontSize: '1.1rem' }}>消費電力</TableCell>
                                 {availableSeries.map(series => {
                                   const info = seriesFeatures[series];
-                                  const specs = acSpecs[selectedTatami] as Record<string, { coolW: number; heatW: number }>;
-                                  const spec = specs[series];
+                                  const specs = acSpecs[selectedTatami] as Partial<Record<Series, ACSpec>>;
+                                  const spec = specs[series]!;
                                   return (
                                     <TableCell
                                       key={`pdf-power-${series}`}
@@ -1432,7 +1702,8 @@ const App: React.FC = () => {
                                   <TableCell sx={{ fontWeight: 600, fontSize: '1rem' }}>{feature}</TableCell>
                                   {availableSeries.map(series => {
                                     const info = seriesFeatures[series];
-                                    const value = info.features[feature as keyof typeof info.features];
+                                    const specs = acSpecs[selectedTatami] as Partial<Record<Series, ACSpec>>;
+                                    const value = getSeriesFeatureValue(feature, series, specs[series]);
                                     return (
                                       <TableCell
                                         key={`pdf-${series}-${feature}`}
@@ -1466,7 +1737,7 @@ const App: React.FC = () => {
                               <StarIcon sx={{ color: '#2563eb', fontSize: 32, mt: 0.5 }} />
                               <Box>
                                 <Typography variant="h6" fontWeight="700" color="primary.main" gutterBottom>
-                                  XSシリーズがおすすめの理由
+                                  XSシリーズが省エネ重視で選ばれる理由
                                 </Typography>
                                 <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.8 }}>
                                   • <strong>省エネ性能No.1</strong> - 消費電力が最も低く、長期間使うほど電気代で差がつきます<br />
@@ -1505,6 +1776,28 @@ const App: React.FC = () => {
               kWhCost={kWhCost}
               planResults={calculationResults}
             />
+            {validResults.length > 0 && (
+              <Stack direction="row" spacing={1.5} justifyContent="flex-end" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<ImageIcon />}
+                  onClick={() => openExportDialog('jpg')}
+                  size="medium"
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
+                >
+                  JPGで保存
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<PdfIcon />}
+                  onClick={() => openExportDialog('pdf')}
+                  size="medium"
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
+                >
+                  PDFで保存
+                </Button>
+              </Stack>
+            )}
           </Stack>
         </Container>
       </Box>

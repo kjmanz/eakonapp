@@ -68,9 +68,9 @@ export const theme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 14,
+          borderRadius: 8,
           border: '1px solid #e5edf9',
-          boxShadow: '0 6px 18px rgba(23, 32, 51, 0.05)',
+          boxShadow: '0 2px 8px rgba(23, 32, 51, 0.04)',
         },
       },
     },
@@ -80,7 +80,7 @@ export const theme = createTheme({
       },
       styleOverrides: {
         root: {
-          borderRadius: 10,
+          borderRadius: 8,
           minHeight: 44,
           fontWeight: 700,
           fontSize: '0.98rem',
@@ -107,7 +107,7 @@ export const theme = createTheme({
         root: {
           backgroundColor: '#ffffff',
           fontSize: '1rem',
-          borderRadius: 10,
+          borderRadius: 8,
         },
         notchedOutline: {
           borderColor: '#c8d5ea',
@@ -166,7 +166,7 @@ export const theme = createTheme({
     MuiChip: {
       styleOverrides: {
         root: {
-          borderRadius: 8,
+          borderRadius: 6,
         },
         label: {
           fontSize: '0.82rem',
